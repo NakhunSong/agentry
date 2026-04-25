@@ -6,9 +6,11 @@
 
 ## Status
 
-🚧 **In design.** This repository currently holds design notes and references.
-Implementation begins after the architecture phase is approved. See [docs/](./docs/)
-for reference material and `MEMORY.md` / GitHub issues for current planning state.
+🚧 **Phase 3 build started.** Architecture (Phase 1, [ARCHITECTURE.md](./ARCHITECTURE.md))
+and KnowledgeStore design (Phase 2, [docs/design/knowledge-store.md](./docs/design/knowledge-store.md))
+are approved. Foundational packages and tooling are landing now; functional adapters
+follow. See the [project board](https://github.com/users/NakhunSong/projects/7) for
+current progress.
 
 ## Vision
 

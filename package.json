@@ -1,0 +1,27 @@
+{
+  "name": "agentry",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --build",
+    "clean": "tsc --build --clean && find packages apps -type d -name dist -prune -exec rm -r {} + 2>/dev/null || true",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "depcheck": "depcruise --config .dependency-cruiser.cjs packages apps"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.13",
+    "@types/node": "^24.0.0",
+    "dependency-cruiser": "^17.3.10",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}
