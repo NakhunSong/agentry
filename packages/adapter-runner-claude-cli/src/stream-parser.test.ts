@@ -31,9 +31,14 @@ describe('parseLine — observed fixtures', () => {
     ]);
   });
 
-  it('emits finished{error} with resumeKey when result.is_error is true', () => {
+  it('emits error + finished{error} with resumeKey when result.is_error is true', () => {
     const events = parseAll(loadFixture('error.ndjson'));
     expect(events).toEqual([
+      {
+        type: 'error',
+        message: 'claude run reported error: overloaded',
+        recoverable: false,
+      },
       {
         type: 'finished',
         reason: 'error',

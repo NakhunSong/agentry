@@ -29,7 +29,7 @@ export function parseLine(line: string, state: ParserState): AgentEvent[] {
     case 'assistant':
       return parseAssistantMessage(parsed);
     case 'result':
-      return [parseResult(parsed, state)];
+      return parseResult(parsed, state);
     default:
       return [];
   }
@@ -70,10 +70,19 @@ function parseAssistantMessage(event: Record<string, unknown>): AgentEvent[] {
   return events;
 }
 
-function parseResult(event: Record<string, unknown>, state: ParserState): FinishedEvent {
+function parseResult(event: Record<string, unknown>, state: ParserState): AgentEvent[] {
   const usage = parseUsage(event.usage);
-  const reason: FinishedEvent['reason'] = event.is_error === true ? 'error' : 'complete';
-  return finishedEvent(reason, usage, state.sessionId);
+  if (event.is_error !== true) {
+    return [finishedEvent('complete', usage, state.sessionId)];
+  }
+  const detail =
+    typeof event.api_error_status === 'string'
+      ? `claude run reported error: ${event.api_error_status}`
+      : 'claude run reported error';
+  return [
+    { type: 'error', message: detail, recoverable: false },
+    finishedEvent('error', usage, state.sessionId),
+  ];
 }
 
 function parseUsage(raw: unknown): TokenUsage {
