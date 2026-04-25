@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","cwd":"/tmp/agent","session_id":"err-session-001","model":"claude-opus-4-7"}
+{"type":"result","subtype":"error","is_error":true,"api_error_status":"overloaded","duration_ms":120,"num_turns":0,"session_id":"err-session-001","total_cost_usd":0,"usage":{"input_tokens":0,"output_tokens":0},"terminal_reason":"api_error"}

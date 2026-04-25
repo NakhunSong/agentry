@@ -14,9 +14,12 @@ module.exports = {
     {
       name: 'adapters-only-import-core',
       severity: 'error',
-      comment: 'adapter-* may only import from core.',
-      from: { path: '^packages/adapter-' },
-      to: { path: '^(packages/(?!core/)|apps/)' },
+      comment: 'adapter-* may only import from core (or itself).',
+      from: { path: '^packages/(adapter-[^/]+)/' },
+      to: {
+        path: '^(packages/|apps/)',
+        pathNot: '^packages/(core|$1)/',
+      },
     },
     {
       name: 'testing-only-imports-core',
