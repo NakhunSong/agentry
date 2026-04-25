@@ -613,7 +613,7 @@ secrets into git or scatters configuration.
 
 | Tier | Examples | Storage |
 |---|---|---|
-| **Secret** (never in git) | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `VOYAGE_API_KEY`, `POSTGRES_PASSWORD` | Env vars only. `.env` (gitignored) → `docker-compose env_file` → `process.env`. `zod`-validated at startup; missing values cause immediate fail. |
+| **Secret** (never in git) | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `VOYAGE_API_KEY`, `POSTGRES_URL` | Env vars only. `.env` (gitignored) → `docker-compose env_file` → `process.env`. `zod`-validated at startup; missing values cause immediate fail. |
 | **Configuration** (workspace/deployment-specific) | Channel allowlists, idle timeout, embedding model name, distillation triggers | `agentry.config.ts` (TypeScript, committable). Values come from env interpolation: `channels: process.env.SLACK_ALLOWED_CHANNELS?.split(',')`. |
 | **Runtime-resolved** (dynamic) | Slack channel IDs from `#channel-name` mentions, user info, message timestamps | Not pre-configured. Agent resolves via tools (§11) at run time. |
 
