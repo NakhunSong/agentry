@@ -1,0 +1,19 @@
+{
+  "name": "@agentry/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agentry": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@agentry/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}

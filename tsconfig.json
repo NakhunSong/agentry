@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@agentry/core": ["packages/core/src/index.ts"],
+      "@agentry/runtime": ["packages/runtime/src/index.ts"],
+      "@agentry/testing": ["packages/testing/src/index.ts"]
+    }
+  },
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/testing" },
+    { "path": "packages/runtime" },
+    { "path": "apps/server" },
+    { "path": "apps/cli" }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@agentry/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@agentry/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}
