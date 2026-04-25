@@ -262,6 +262,19 @@ interface SessionPolicy {
   history — operators must communicate this. An opt-in `message.channels`
   subscription is a Phase 2+ option for always-listening deployments.
 
+**OAuth scope matrix**
+
+| Capability | Required Slack scopes |
+|---|---|
+| Receive mentions, post replies | `app_mentions:read`, `chat:write` |
+| Thread context fetch (lazy `conversations.replies`) | `channels:history` (public), `groups:history` (private) |
+| Channel history tool (see §11 Tool Exposure) | above + `channels:read` (resolve names), `groups:read` for private channels |
+| DM | `im:history`, `im:read` |
+
+The Slack adapter MUST verify granted scopes at startup and fail fast with an
+actionable remediation message if any required scope for a configured capability
+is missing.
+
 ### 4.4 KnowledgeStore — issue #9
 
 ```ts
@@ -387,8 +400,26 @@ agent runs complete. Without per-key serialization, two parallel `recordTurn`s a
 two parallel agent invocations race on the same session — interleaved or duplicated
 state results. Per-key serial guarantees ordered processing within a session.
 
-**MVP adapter**: in-memory `Map<key, Promise>` chain. Single process. Production
-swap to BullMQ or pg-boss for cross-process semantics is a Phase 5 concern.
+**MVP adapter**: in-memory `Map<key, Promise>` chain. Single process.
+
+**When to swap to a cross-process queue**
+
+Default production target is **pg-boss** (uses existing Postgres, no new
+container — preserves the "single docker compose" promise). BullMQ is an opt-in
+alternative for users wanting Bull Board / Redis-backed semantics.
+
+Switch from in-memory if **any one** of the following holds:
+
+| # | Trigger | Why |
+|---|---|---|
+| 1 | Horizontal scaling: 2+ runtime instances behind a load balancer | In-memory `Map<key, Promise>` is process-local; same `sessionId` arriving at different instances breaks per-key serialization |
+| 2 | Restart durability required | In-memory loses queued jobs on deploy / crash |
+| 3 | Long-running background jobs regularly exceed 60s | Distillation or full-sync block agent latency in-process; need separate worker |
+| 4 | Operational visibility (retry dashboard, DLQ, queue stats) | In-memory adapter exposes none |
+| 5 | Per-source rate limiting (GitHub API quotas, etc.) | Centralized throttling natural in queue, awkward in-memory |
+
+If none apply (single VPS, single process, light traffic, Slack retry tolerance
+acceptable), in-memory remains the right choice. Implementation tracked in #28.
 
 ---
 
@@ -575,7 +606,107 @@ interpolation supported. CLI override for ad-hoc overrides.
 
 ---
 
-## 10. Glossary
+## 10. Configuration & Secrets — issue #27
+
+Three-tier separation. Each value belongs to exactly one tier; mixing tiers leaks
+secrets into git or scatters configuration.
+
+| Tier | Examples | Storage |
+|---|---|---|
+| **Secret** (never in git) | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `VOYAGE_API_KEY`, `POSTGRES_PASSWORD` | Env vars only. `.env` (gitignored) → `docker-compose env_file` → `process.env`. `zod`-validated at startup; missing values cause immediate fail. |
+| **Configuration** (workspace/deployment-specific) | Channel allowlists, idle timeout, embedding model name, distillation triggers | `agentry.config.ts` (TypeScript, committable). Values come from env interpolation: `channels: process.env.SLACK_ALLOWED_CHANNELS?.split(',')`. |
+| **Runtime-resolved** (dynamic) | Slack channel IDs from `#channel-name` mentions, user info, message timestamps | Not pre-configured. Agent resolves via tools (§11) at run time. |
+
+**Why prefer runtime resolution for IDs over pre-configured channel lists**:
+
+- Avoids redeploy whenever a new channel is added
+- Naturally constrains the bot to channels it's actually invited to (Slack scope semantics enforce this — `channels:history` only sees joined channels)
+- Matches users' natural language ("check #other-channel") with no operator setup
+
+**Schema validation pattern**:
+
+```ts
+import { z } from 'zod';
+
+const SecretsSchema = z.object({
+  SLACK_BOT_TOKEN:      z.string().startsWith('xoxb-'),
+  SLACK_SIGNING_SECRET: z.string().min(1),
+  POSTGRES_URL:         z.string().url(),
+  VOYAGE_API_KEY:       z.string().min(1),
+  // ...
+});
+
+export const secrets = SecretsSchema.parse(process.env);
+```
+
+Production deployments may swap env loading for a secret manager (Vault, AWS
+Secrets Manager, Doppler) by wrapping the loader. The `secrets` consumer surface
+stays stable — adapters don't know where the value came from.
+
+---
+
+## 11. Tool Exposure to the Agent — issue #26
+
+The agent (Claude) gains capabilities in two ways. Both are first-class. Adapters
+choose per tool which mechanism fits.
+
+### 11.1 MCP servers (recommended for structured, high-frequency tools)
+
+Each adapter MAY ship a stdio MCP server in `<adapter-package>/mcp/`. The
+composition root collects enabled servers and writes (or merges into)
+`seed/agent-workdir/.mcp.json` at startup. Claude CLI auto-loads them.
+
+Use MCP for:
+- High-frequency calls during a conversation (channel history fetch, message search)
+- Structured I/O where shell quoting would be brittle (Korean channel names, JSON results)
+- Tools that benefit from explicit JSON Schema (Claude reasons about argument shape better)
+
+Example: `adapter-channel-slack/mcp/` exposes `slack_resolve_channel`,
+`slack_get_channel_history`, `slack_search_messages`, `slack_get_user_info`.
+This is what makes the Nakbot-style "check QA reports in #other-channel"
+use case work without custom code in user forks.
+
+### 11.2 CLI tools (recommended for ops + ad-hoc)
+
+Each adapter MAY ship CLI binaries in `<adapter-package>/bin/`. The agent invokes
+them via the built-in Bash tool. CLI tools are also runnable by human operators —
+that dual-purpose is the point.
+
+Use CLI for:
+- Operations also useful to humans (`agentry-slack list-channels`, `agentry migrate`, `agentry distill --session <id>`)
+- One-shot or low-frequency commands
+- Tools where shell composability matters (`| jq`, redirects, piping into other tools)
+
+### 11.3 Picking between them
+
+| Tool intent | MCP | CLI |
+|---|---|---|
+| Agent calls during every conversation | ✓ | |
+| Operator runs from terminal | | ✓ |
+| Both agent and operator | ship both, share a library inside the adapter package | |
+
+Don't ship the same capability twice if it's not needed — pick the dominant
+consumer and start there. The Slack adapter ships MCP for `slack_*` tools
+(agent-driven) and CLI for `verify-scopes`, `send-test-message`, `list-channels`
+(ops-driven).
+
+### 11.4 Composition wiring
+
+```ts
+const slackChannel = new SlackInboundChannel(config.slack);
+const slackMcp     = new SlackMcpServer(config.slack);  // opt-in
+const slackCli     = registerSlackCli(config.slack);    // installed as bin/
+
+const mcpServers = [slackMcp /*, ...*/].filter(s => s.enabled);
+mergeAgentWorkdirMcpJson(seedDir, mcpServers);
+```
+
+The agent-workdir's existing `.mcp.json` (user customizations) is preserved during
+the merge — framework-managed entries are namespaced.
+
+---
+
+## 12. Glossary
 
 - **Episodic memory**: raw `Turn`s stored verbatim. Source of truth for what
   happened in conversations.
