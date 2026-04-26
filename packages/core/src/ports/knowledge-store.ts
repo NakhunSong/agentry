@@ -11,8 +11,10 @@ export interface KnowledgeStore {
   upsertItem(item: KnowledgeItemInput): Promise<KnowledgeId>;
   retrieve(query: RetrievalQuery): Promise<RetrievalResult>;
   deleteBySource(sourceId: SourceId): Promise<void>;
-  // Filters internally to source_type='project_seed' so calling with a
-  // user-data externalId can't wipe distilled session knowledge.
+  // Adapter implementations MUST filter internally to source_type='project_seed'.
+  // The pgvector schema's UNIQUE(tenant_id, external_id) index already makes
+  // collisions across source_types impossible, so this filter is defense-in-depth
+  // against future schema relaxation rather than a guard against current data.
   deleteByExternalId(tenantId: TenantId, externalId: string): Promise<void>;
   listByTenant(tenantId: TenantId, filter: ItemFilter): AsyncIterable<KnowledgeItem>;
 }
