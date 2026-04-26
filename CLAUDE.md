@@ -54,8 +54,8 @@ packages/
   testing/                # in-memory adapters for use-case tests
   runtime/                # composition root, config schema (#27)
   adapter-channel-slack/  # to be added in #18
-  adapter-runner-claude-cli/  # to be added in #19
-  adapter-store-pgvector/ # to be added in #20
+  adapter-runner-claude-cli/  # Claude CLI subprocess runner (#19)
+  adapter-store-pgvector/ # Postgres + pgvector schema migrations (#20)
   ...                     # other adapters per ARCHITECTURE.md §6
 apps/
   server/                 # long-running process (Hono entry point)
