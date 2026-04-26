@@ -1,4 +1,13 @@
 export type {
+  IncomingEvent,
+  Participant,
+  ReplyAck,
+  ReplyContent,
+  ReplyTarget,
+  ThreadingMetadata,
+  TurnContent,
+} from './channel.js';
+export type {
   KnowledgeId,
   SessionId,
   SourceId,
