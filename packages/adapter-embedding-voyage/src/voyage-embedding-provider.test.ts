@@ -210,9 +210,7 @@ describe('VoyageEmbeddingProvider', () => {
     });
 
     it('throws original error after exhausting retries on network error', async () => {
-      const fetchMock = vi
-        .fn<typeof globalThis.fetch>()
-        .mockRejectedValue(new Error('ECONNRESET'));
+      const fetchMock = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new Error('ECONNRESET'));
 
       const provider = new VoyageEmbeddingProvider({ apiKey: 'k', fetch: fetchMock });
       const promise = provider.embed(['hi']);
