@@ -1,5 +1,8 @@
 import type { SessionId } from '../domain/ids.js';
 
+// Agent-context shape — intentionally minimal so storage internals don't leak
+// into the runner. The richer store-side result lives in `RetrievedKnowledgeItem`
+// (`domain/retrieval.ts`); a use case maps store results into this view.
 export interface RetrievedItem {
   readonly text: string;
   readonly score?: number;
