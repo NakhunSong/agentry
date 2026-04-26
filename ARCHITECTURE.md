@@ -354,13 +354,16 @@ interface KnowledgeIngestion {
 
 ```ts
 interface EmbeddingProvider {
-  readonly model: string;       // e.g., 'voyage-3'
+  readonly model: string;       // e.g., 'voyage-3.5'
   readonly dimension: number;   // declared, validated by KnowledgeStore on init
-  embed(texts: string[]): Promise<Float32Array[]>;
+  embed(texts: readonly string[]): Promise<readonly Float32Array[]>;
 }
 ```
 
-**Default**: Voyage `voyage-3`. Best-in-class retrieval quality at the time of writing.
+**Default**: Voyage `voyage-3.5` (1024 dim). Best-in-class retrieval quality and
+generous free tier (200M tokens shared across the voyage-3 family). Plain
+`voyage-3` was the original spec but is no longer in Voyage's documented model
+list; `voyage-3.5` is the supported successor at the same default dimension.
 Alternative `OpenAIEmbeddingProvider` (`text-embedding-3-large`, 3072 dim) ships
 as second adapter. Dimension mismatch between provider and store is a startup error.
 
