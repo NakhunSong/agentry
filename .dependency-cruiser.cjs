@@ -1,6 +1,7 @@
 /**
  * dependency-cruiser config — enforces ARCHITECTURE.md §6 layer rules.
- * core ← (testing | adapter-* | runtime); runtime ← apps; nothing else crosses.
+ * core ← (testing | adapter-* | runtime | apps); apps may also wire adapters
+ * directly as the composition root (§7); testing is unit-test-only.
  */
 module.exports = {
   forbidden: [
@@ -36,11 +37,12 @@ module.exports = {
       to: { path: '^apps/' },
     },
     {
-      name: 'apps-only-from-runtime',
+      name: 'apps-no-testing',
       severity: 'error',
-      comment: 'apps may only import from runtime (which re-exports core where needed).',
+      comment:
+        'apps act as the composition root (ARCHITECTURE.md §7): they may import core, runtime, and adapter-* directly. runtime is convenience, not a chokepoint — but never test-only utilities.',
       from: { path: '^apps/' },
-      to: { path: '^packages/(?!runtime/)' },
+      to: { path: '^packages/testing/' },
     },
     {
       name: 'no-circular',
