@@ -46,6 +46,16 @@ export interface Turn extends TurnInput {
   readonly createdAt: Date;
 }
 
+// Open kind. Common values: 'idle_timeout' (JobRunner-fired after
+// SessionPolicy.idleTimeoutMinutes), 'channel_close' (CLI process exit,
+// Slack channel archive), 'user_left'. Channel adapters can introduce
+// their own kinds — SessionPolicy.shouldEndOn decides per channel whether
+// the kind closes the session.
+export interface SessionLifecycleEvent {
+  readonly kind: string;
+  readonly metadata?: Readonly<Record<string, unknown>>;
+}
+
 // Trigger taxonomy from `docs/design/knowledge-store.md` §5.1. `rolling` is
 // disabled by default; see design doc for per-trigger policy.
 export type DistillationCriteria =

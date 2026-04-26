@@ -253,6 +253,14 @@ interface SessionPolicy {
   idleTimeoutMinutes(): number;
   shouldEndOn(e: SessionLifecycleEvent): boolean;
 }
+
+// Open kind. Common values: 'idle_timeout' (JobRunner-fired after
+// idleTimeoutMinutes), 'channel_close' (CLI process exit, Slack channel
+// archive), 'user_left'. Channel adapters can introduce their own.
+interface SessionLifecycleEvent {
+  kind: string;
+  metadata?: Record<string, unknown>;
+}
 ```
 
 **Per-channel policy table**
