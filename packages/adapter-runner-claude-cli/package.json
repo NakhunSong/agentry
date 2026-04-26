@@ -1,5 +1,5 @@
 {
-  "name": "@agentry/core",
+  "name": "@agentry/adapter-runner-claude-cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,10 @@
     "build": "tsc -b",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@agentry/core": "workspace:*"
+  },
   "devDependencies": {
-    "@types/node": "^25.6.0"
+    "@types/node": "^24.12.2"
   }
 }
