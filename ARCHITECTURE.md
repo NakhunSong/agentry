@@ -157,6 +157,27 @@ interface OutboundChannel {
   readonly kind: ChannelKind;
   reply(target: ReplyTarget, content: ReplyContent): Promise<ReplyAck>;
 }
+
+// Channel-specific routing keys (Slack thread_ts, Discord thread_id, ...).
+// Opaque to use cases except as a pass-through to OutboundChannel.
+type ThreadingMetadata = Readonly<Record<string, unknown>>;
+
+interface ReplyTarget {
+  channelKind: ChannelKind;
+  channelNativeRef: ChannelNativeRef;
+  threading?: ThreadingMetadata;
+}
+
+interface ReplyContent {
+  text: string;
+  // Future: attachments, structured blocks. Mirrors TurnContent.
+}
+
+interface ReplyAck {
+  messageId: string;          // adapter-native (Slack ts, Discord message_id)
+  postedAt: Date;
+  metadata?: Record<string, unknown>;
+}
 ```
 
 **Decisions**
