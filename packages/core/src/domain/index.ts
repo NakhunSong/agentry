@@ -34,6 +34,7 @@ export type {
   ChannelNativeRef,
   DistillationCriteria,
   Session,
+  SessionLifecycleEvent,
   SessionStatus,
   Turn,
   TurnInput,
