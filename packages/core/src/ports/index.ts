@@ -5,6 +5,7 @@ export type {
   RetrievedItem,
   TokenUsage,
 } from './agent-runner.js';
+export type { EmbeddingProvider } from './embedding-provider.js';
 export type {
   JobRunner,
   JobRunnerEnqueueOptions,
