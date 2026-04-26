@@ -59,6 +59,16 @@ importers:
         specifier: ^24.0.0
         version: 24.12.2
 
+  packages/adapter-jobrunner-memory:
+    dependencies:
+      '@agentry/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^24.12.2
+        version: 24.12.2
+
   packages/adapter-runner-claude-cli:
     dependencies:
       '@agentry/core':

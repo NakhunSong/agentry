@@ -6,6 +6,7 @@
       "@agentry/runtime": ["packages/runtime/src/index.ts"],
       "@agentry/testing": ["packages/testing/src/index.ts"],
       "@agentry/adapter-runner-claude-cli": ["packages/adapter-runner-claude-cli/src/index.ts"],
+      "@agentry/adapter-jobrunner-memory": ["packages/adapter-jobrunner-memory/src/index.ts"],
       "@agentry/adapter-store-pgvector": ["packages/adapter-store-pgvector/src/index.ts"]
     }
   },
@@ -15,6 +16,7 @@
     { "path": "packages/testing" },
     { "path": "packages/runtime" },
     { "path": "packages/adapter-runner-claude-cli" },
+    { "path": "packages/adapter-jobrunner-memory" },
     { "path": "packages/adapter-store-pgvector" },
     { "path": "apps/server" },
     { "path": "apps/cli" }
