@@ -19,4 +19,14 @@ export type {
   RetrievalResult,
   RetrievedKnowledgeItem,
 } from './retrieval.js';
+export type {
+  AuthorRole,
+  ChannelKind,
+  ChannelNativeRef,
+  DistillationCriteria,
+  Session,
+  SessionStatus,
+  Turn,
+  TurnInput,
+} from './session.js';
 export type { SourceKind, SourceRef, SourceRefInput } from './source.js';
