@@ -7,13 +7,18 @@
     "agentry": "./dist/main.js"
   },
   "scripts": {
-    "build": "tsc -b",
-    "dev": "tsx src/main.ts"
+    "build": "tsc -b && chmod +x dist/main.js",
+    "dev": "tsx src/main.ts",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@agentry/adapter-store-pgvector": "workspace:*",
     "@agentry/runtime": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0"
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.5",
+    "pg": "^8.16.0",
+    "testcontainers": "^11.7.0"
   }
 }

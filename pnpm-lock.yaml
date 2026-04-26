@@ -29,6 +29,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@agentry/adapter-store-pgvector':
+        specifier: workspace:*
+        version: link:../../packages/adapter-store-pgvector
       '@agentry/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -36,6 +39,15 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.12.2
+      '@types/pg':
+        specifier: ^8.15.5
+        version: 8.20.0
+      pg:
+        specifier: ^8.16.0
+        version: 8.20.0
+      testcontainers:
+        specifier: ^11.7.0
+        version: 11.14.0
 
   apps/server:
     dependencies:

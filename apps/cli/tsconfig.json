@@ -9,6 +9,9 @@
     "types": ["node"]
   },
   "include": ["src/**/*"],
-  "exclude": ["**/*.test.ts", "**/*.spec.ts", "dist", "node_modules"],
-  "references": [{ "path": "../../packages/runtime" }]
+  "exclude": ["**/*.test.ts", "**/*.spec.ts", "src/__integration__/**", "dist", "node_modules"],
+  "references": [
+    { "path": "../../packages/runtime" },
+    { "path": "../../packages/adapter-store-pgvector" }
+  ]
 }
