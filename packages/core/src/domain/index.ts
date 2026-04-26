@@ -1,1 +1,22 @@
-export type { KnowledgeId, SessionId, TenantId, TurnId } from './ids.js';
+export type {
+  KnowledgeId,
+  SessionId,
+  SourceId,
+  TenantId,
+  TurnId,
+} from './ids.js';
+export type {
+  KnowledgeItem,
+  KnowledgeItemInput,
+  KnowledgeKind,
+  ProvenanceRef,
+  SourceType,
+} from './knowledge.js';
+export type {
+  ItemFilter,
+  RetrievalMode,
+  RetrievalQuery,
+  RetrievalResult,
+  RetrievedKnowledgeItem,
+} from './retrieval.js';
+export type { SourceKind, SourceRef, SourceRefInput } from './source.js';
