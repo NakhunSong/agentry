@@ -15,8 +15,8 @@ import type {
   SourceType,
   TenantId,
 } from '@agentry/core';
+import { canonicalHash } from '@agentry/core';
 import type { Pool } from 'pg';
-import { canonicalHash } from './canonicalize.js';
 
 const LIST_PAGE_SIZE = 200;
 
