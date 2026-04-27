@@ -9,7 +9,10 @@
     "dev": "tsx watch src/main.ts"
   },
   "dependencies": {
-    "@agentry/runtime": "workspace:*"
+    "@agentry/core": "workspace:*",
+    "@agentry/runtime": "workspace:*",
+    "@hono/node-server": "^1.19.6",
+    "hono": "^4.10.4"
   },
   "devDependencies": {
     "@types/node": "^24.0.0"
