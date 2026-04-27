@@ -34,10 +34,15 @@ export interface IncomingEvent {
   // Adapter-computed; protects against duplicate webhook delivery (Slack
   // Events API redelivers on timeout).
   readonly idempotencyKey: string;
-  // Synthetic-thread-history flag per ARCHITECTURE.md §4.3 lives here as
-  // `metadata.synthetic === true`; concrete adapters may add other keys.
+  // Synthetic-thread-history flag per ARCHITECTURE.md §4.3 lives here under
+  // `SYNTHETIC_EVENT_METADATA_KEY`; concrete adapters may add other keys.
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
+
+// Metadata key channel adapters set to `true` when emitting prior thread
+// messages on first contact. The use case skips agent invocation for these
+// events (history-only).
+export const SYNTHETIC_EVENT_METADATA_KEY = 'synthetic';
 
 export interface ReplyTarget {
   readonly channelKind: ChannelKind;

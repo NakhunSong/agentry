@@ -1,3 +1,4 @@
+export { canonicalHash, canonicalize } from './canonicalize.js';
 export type {
   IncomingEvent,
   Participant,
@@ -7,6 +8,7 @@ export type {
   ThreadingMetadata,
   TurnContent,
 } from './channel.js';
+export { SYNTHETIC_EVENT_METADATA_KEY } from './channel.js';
 export type {
   KnowledgeId,
   SessionId,
