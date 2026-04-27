@@ -31,6 +31,14 @@ export class SlackEventMappingError extends Error {
 // filter at that subscription point.
 export function mapAppMentionToIncomingEvent(envelope: SlackAppMentionEnvelope): IncomingEvent {
   const { event, event_id, team_id } = envelope;
+  if (!event_id) {
+    throw new SlackEventMappingError(
+      'app_mention envelope missing event_id (cannot derive idempotencyKey)',
+    );
+  }
+  if (!team_id) {
+    throw new SlackEventMappingError(`app_mention envelope missing team_id (event_id=${event_id})`);
+  }
   if (!event.user) {
     throw new SlackEventMappingError(
       `app_mention without event.user (event_id=${event_id}); cannot identify author`,

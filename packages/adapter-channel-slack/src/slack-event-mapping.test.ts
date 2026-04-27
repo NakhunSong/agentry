@@ -75,4 +75,14 @@ describe('mapAppMentionToIncomingEvent', () => {
       SlackEventMappingError,
     );
   });
+
+  it('throws SlackEventMappingError when event_id is missing', () => {
+    const env = { ...buildEnvelope(), event_id: '' };
+    expect(() => mapAppMentionToIncomingEvent(env)).toThrow(/event_id/);
+  });
+
+  it('throws SlackEventMappingError when team_id is missing', () => {
+    const env = { ...buildEnvelope(), team_id: '' };
+    expect(() => mapAppMentionToIncomingEvent(env)).toThrow(/team_id/);
+  });
 });

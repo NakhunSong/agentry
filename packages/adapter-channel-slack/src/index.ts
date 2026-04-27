@@ -1,4 +1,4 @@
-export { SLACK_CHANNEL_KIND, SLACK_DM_CHANNEL_KIND } from './slack-channel-kinds.js';
+export { SLACK_CHANNEL_KIND } from './slack-channel-kinds.js';
 export {
   mapAppMentionToIncomingEvent,
   type SlackAppMentionEnvelope,

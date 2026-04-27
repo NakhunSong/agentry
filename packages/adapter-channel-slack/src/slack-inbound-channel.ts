@@ -59,10 +59,11 @@ export class SlackInboundChannel implements InboundChannel {
 
     app.event('app_mention', async ({ event, body, logger }) => {
       try {
+        const b = body as { event_id?: unknown; team_id?: unknown };
         const envelope: SlackAppMentionEnvelope = {
           event: event as SlackAppMentionEnvelope['event'],
-          event_id: (body as { event_id: string }).event_id,
-          team_id: (body as { team_id: string }).team_id,
+          event_id: typeof b.event_id === 'string' ? b.event_id : '',
+          team_id: typeof b.team_id === 'string' ? b.team_id : '',
         };
         const incoming = mapAppMentionToIncomingEvent(envelope);
         await handler(incoming);
