@@ -5,7 +5,6 @@ import type {
   ChannelKind,
   HandleIncomingMessageDeps,
   IncomingEvent,
-  Logger,
   OutboundChannel,
   SessionPolicy,
 } from '@agentry/core';
@@ -15,6 +14,7 @@ import { RecordingAgentRunner } from '../agent-runner/recording-agent-runner.js'
 import { RecordingOutboundChannel } from '../channels/recording-outbound-channel.js';
 import { InMemoryJobRunner } from '../job-runner/in-memory-job-runner.js';
 import { InMemoryKnowledgeStore } from '../knowledge-store/in-memory-knowledge-store.js';
+import { silentLogger } from '../logger/silent-logger.js';
 import { StaticSessionPolicy } from '../session-policy/static-session-policy.js';
 import { InMemorySessionStore } from '../session-store/in-memory-session-store.js';
 
@@ -29,16 +29,6 @@ function deferred<T>(): Deferred<T> {
   });
   return { promise, resolve };
 }
-
-const silentLogger: Logger = {
-  trace: () => {},
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  fatal: () => {},
-  child: () => silentLogger,
-};
 
 function makeEvent(overrides: Partial<IncomingEvent> = {}): IncomingEvent {
   return {
