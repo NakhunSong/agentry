@@ -16,10 +16,18 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@agentry/adapter-embedding-voyage": "workspace:*",
+    "@agentry/adapter-jobrunner-memory": "workspace:*",
+    "@agentry/adapter-logger-pino": "workspace:*",
+    "@agentry/adapter-runner-claude-cli": "workspace:*",
+    "@agentry/adapter-store-pgvector": "workspace:*",
     "@agentry/core": "workspace:*",
+    "pg": "^8.16.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^24.12.2"
+    "@agentry/testing": "workspace:*",
+    "@types/node": "^24.12.2",
+    "@types/pg": "^8.15.5"
   }
 }
