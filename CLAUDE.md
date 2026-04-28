@@ -53,7 +53,7 @@ packages/
   core/                   # domain + ports + use cases (zero runtime deps)
   testing/                # in-memory adapters for use-case tests
   runtime/                # composition root, config schema (#27)
-  adapter-channel-slack/  # to be added in #18
+  adapter-channel-slack/  # Slack channel adapter (events API, threads as sessions)
   adapter-runner-claude-cli/  # Claude CLI subprocess runner (#19)
   adapter-store-pgvector/ # Postgres + pgvector schema migrations (#20)
   ...                     # other adapters per ARCHITECTURE.md §6

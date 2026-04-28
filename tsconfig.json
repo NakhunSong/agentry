@@ -9,7 +9,8 @@
       "@agentry/adapter-jobrunner-memory": ["packages/adapter-jobrunner-memory/src/index.ts"],
       "@agentry/adapter-store-pgvector": ["packages/adapter-store-pgvector/src/index.ts"],
       "@agentry/adapter-embedding-voyage": ["packages/adapter-embedding-voyage/src/index.ts"],
-      "@agentry/adapter-logger-pino": ["packages/adapter-logger-pino/src/index.ts"]
+      "@agentry/adapter-logger-pino": ["packages/adapter-logger-pino/src/index.ts"],
+      "@agentry/adapter-channel-slack": ["packages/adapter-channel-slack/src/index.ts"]
     }
   },
   "files": [],
@@ -22,6 +23,7 @@
     { "path": "packages/adapter-store-pgvector" },
     { "path": "packages/adapter-embedding-voyage" },
     { "path": "packages/adapter-logger-pino" },
+    { "path": "packages/adapter-channel-slack" },
     { "path": "apps/server" },
     { "path": "apps/cli" }
   ]
