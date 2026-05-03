@@ -20,6 +20,13 @@ current progress.
 - **Single-container deploy**: One `docker compose up` on a VPS gets you running. Postgres + pgvector for storage; graph layer is opt-in.
 - **Single-direction sync**: Framework updates flow downstream to your fork; your data stays yours.
 
+## Try it locally
+
+The MVP slice ([issue #21](https://github.com/NakhunSong/agentry/issues/21)) is
+end-to-end: post in a Slack thread → Claude reply → both turns persisted in
+Postgres. Walkthrough in [docs/recipes/smoke-test.md](./docs/recipes/smoke-test.md).
+The bundled `docker-compose.yml` is dev-only; production deployment lands in Phase 5.
+
 ## Roadmap
 
 | Phase | Scope |

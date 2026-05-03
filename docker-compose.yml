@@ -1,0 +1,24 @@
+# Local dev compose — smoke-test only (#21 end-to-end Q&A flow).
+# NOT a production deploy target; the canonical deployment story lands in
+# Phase 5. Defaults match `.env.example` POSTGRES_URL so a fresh checkout
+# can `docker compose up` and run `agentry migrate` without further config.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: agentry-postgres
+    environment:
+      POSTGRES_USER: agentry
+      POSTGRES_PASSWORD: agentry
+      POSTGRES_DB: agentry
+    ports:
+      - '5432:5432'
+    volumes:
+      - agentry-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U agentry -d agentry']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  agentry-postgres-data:
