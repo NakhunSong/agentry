@@ -27,6 +27,11 @@ export type HandleIncomingMessage = (event: IncomingEvent) => Promise<void>;
 
 const DEFAULT_TOP_K = 5;
 
+// Header for the optional channel-context block prepended to the agent
+// prompt. Kept as an exported constant so seed/agent-workdir/CLAUDE.md can
+// refer to it by name and stay in sync if it changes.
+export const CHANNEL_CONTEXT_HEADER = '[Channel context]';
+
 interface ProcessOneTurnArgs {
   readonly event: IncomingEvent;
   readonly sessionId: SessionId;
@@ -34,6 +39,7 @@ interface ProcessOneTurnArgs {
   readonly log: Logger;
   readonly deps: HandleIncomingMessageDeps;
   readonly topK: number;
+  readonly policy: SessionPolicy;
 }
 
 export function makeHandleIncomingMessage(deps: HandleIncomingMessageDeps): HandleIncomingMessage {
@@ -61,9 +67,19 @@ export function makeHandleIncomingMessage(deps: HandleIncomingMessageDeps): Hand
 
     await deps.jobRunner.enqueue({
       key: session.id,
-      job: () => processOneTurn({ event, sessionId: session.id, tenantId, log, deps, topK }),
+      job: () =>
+        processOneTurn({ event, sessionId: session.id, tenantId, log, deps, topK, policy }),
     });
   };
+}
+
+function buildAgentPrompt(event: IncomingEvent, policy: SessionPolicy): string {
+  const ctx = policy.toAgentContext?.(event);
+  if (!ctx) return event.payload.text;
+  const keys = Object.keys(ctx);
+  if (keys.length === 0) return event.payload.text;
+  const lines = keys.map((k) => `- ${k}: ${ctx[k]}`).join('\n');
+  return `${CHANNEL_CONTEXT_HEADER}\n${lines}\n\n${event.payload.text}`;
 }
 
 async function processOneTurn(args: ProcessOneTurnArgs): Promise<void> {
@@ -106,7 +122,7 @@ async function processOneTurn(args: ProcessOneTurnArgs): Promise<void> {
     for await (const ev of deps.agentRunner.run({
       sessionId,
       workdir: deps.agentWorkdir,
-      prompt: event.payload.text,
+      prompt: buildAgentPrompt(event, args.policy),
       context: { retrievedKnowledge },
     })) {
       if (ev.type === 'text_delta') {

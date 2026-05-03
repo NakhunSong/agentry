@@ -8,7 +8,7 @@ import type {
   OutboundChannel,
   SessionPolicy,
 } from '@agentry/core';
-import { makeHandleIncomingMessage } from '@agentry/core';
+import { CHANNEL_CONTEXT_HEADER, makeHandleIncomingMessage } from '@agentry/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { RecordingAgentRunner } from '../agent-runner/recording-agent-runner.js';
 import { RecordingOutboundChannel } from '../channels/recording-outbound-channel.js';
@@ -121,6 +121,76 @@ describe('makeHandleIncomingMessage', () => {
     expect(harness.outbound.replies).toHaveLength(1);
     expect(harness.outbound.replies[0]?.content).toEqual({ text: 'reply' });
     expect(harness.errors).toHaveLength(0);
+  });
+
+  it('passes the user text unchanged when policy.toAgentContext is undefined or empty', async () => {
+    const recorder = new RecordingAgentRunner([
+      { type: 'text_delta', text: 'reply' },
+      { type: 'finished', reason: 'complete', usage: { input: 0, output: 0 } },
+    ]);
+    const h = buildHarness({ agentRunner: recorder });
+
+    await h.handle(makeEvent({ payload: { text: 'plain text' } }));
+    await h.jobRunner.drain();
+
+    expect(recorder.inputs).toHaveLength(1);
+    expect(recorder.inputs[0]?.prompt).toBe('plain text');
+    expect(recorder.inputs[0]?.prompt).not.toContain(CHANNEL_CONTEXT_HEADER);
+  });
+
+  it('prepends a channel-context block when policy returns non-empty context', async () => {
+    const recorder = new RecordingAgentRunner([
+      { type: 'text_delta', text: 'reply' },
+      { type: 'finished', reason: 'complete', usage: { input: 0, output: 0 } },
+    ]);
+    const policyWithCtx = new StaticSessionPolicy({
+      channelKind: 'test',
+      agentContext: { channelId: 'C123', threadTs: '9.7' },
+    });
+    const h = buildHarness({
+      agentRunner: recorder,
+      sessionPolicies: new Map([['test', policyWithCtx]]),
+    });
+
+    await h.handle(makeEvent({ payload: { text: 'summarize this channel' } }));
+    await h.jobRunner.drain();
+
+    const prompt = recorder.inputs[0]?.prompt ?? '';
+    expect(prompt).toContain(CHANNEL_CONTEXT_HEADER);
+    expect(prompt).toContain('channelId: C123');
+    expect(prompt).toContain('threadTs: 9.7');
+    expect(prompt).toContain('summarize this channel');
+    expect(prompt.indexOf(CHANNEL_CONTEXT_HEADER)).toBeLessThan(
+      prompt.indexOf('summarize this channel'),
+    );
+  });
+
+  it('prepends the same context on every turn so resume flow keeps the prompt structure', async () => {
+    const recorder = new RecordingAgentRunner([
+      { type: 'text_delta', text: 'reply' },
+      { type: 'finished', reason: 'complete', usage: { input: 0, output: 0 } },
+    ]);
+    const policyWithCtx = new StaticSessionPolicy({
+      channelKind: 'test',
+      agentContext: { channelId: 'C123', threadTs: '9.7' },
+    });
+    const h = buildHarness({
+      agentRunner: recorder,
+      sessionPolicies: new Map([['test', policyWithCtx]]),
+    });
+
+    await h.handle(makeEvent({ payload: { text: 'first' } }));
+    await h.jobRunner.drain();
+    await h.handle(makeEvent({ payload: { text: 'second' } }));
+    await h.jobRunner.drain();
+
+    expect(recorder.inputs).toHaveLength(2);
+    for (const input of recorder.inputs) {
+      expect(input.prompt).toContain(CHANNEL_CONTEXT_HEADER);
+      expect(input.prompt).toContain('channelId: C123');
+    }
+    expect(recorder.inputs[0]?.prompt).toContain('first');
+    expect(recorder.inputs[1]?.prompt).toContain('second');
   });
 
   it('only records user turn for synthetic events (history-only)', async () => {

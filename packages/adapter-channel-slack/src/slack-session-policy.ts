@@ -27,4 +27,13 @@ export class SlackSessionPolicy implements SessionPolicy {
   shouldEndOn(event: SessionLifecycleEvent): boolean {
     return event.kind === 'channel_close';
   }
+
+  toAgentContext(event: IncomingEvent): Readonly<Record<string, string>> {
+    const channel = event.threading.channel;
+    const threadTs = event.threading.thread_ts;
+    const ctx: Record<string, string> = {};
+    if (typeof channel === 'string' && channel.length > 0) ctx.channelId = channel;
+    if (typeof threadTs === 'string' && threadTs.length > 0) ctx.threadTs = threadTs;
+    return ctx;
+  }
 }

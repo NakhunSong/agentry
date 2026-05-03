@@ -39,4 +39,22 @@ describe('SlackSessionPolicy', () => {
     expect(policy.shouldEndOn({ kind: 'idle_timeout' })).toBe(false);
     expect(policy.shouldEndOn({ kind: 'user_left' })).toBe(false);
   });
+
+  it('exposes channelId + threadTs as agent context', () => {
+    const ctx = policy.toAgentContext(buildEvent('slack:C1:1.0'));
+    expect(ctx).toEqual({ channelId: 'C1', threadTs: '1.0' });
+  });
+
+  it('omits keys when threading values are missing or non-string', () => {
+    const event: IncomingEvent = {
+      channelKind: 'slack',
+      channelNativeRef: 'slack:?:?',
+      author: { channelUserId: 'U1' },
+      payload: { text: 'hi' },
+      threading: {},
+      receivedAt: new Date(0),
+      idempotencyKey: 'Ev1',
+    };
+    expect(policy.toAgentContext(event)).toEqual({});
+  });
 });

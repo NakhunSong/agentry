@@ -1,8 +1,11 @@
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import type { AgentEvent } from '@agentry/core';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ClaudeCliAgentRunner } from './claude-cli-runner.js';
 
 class FakeChildProcess extends EventEmitter {
@@ -157,6 +160,102 @@ describe('ClaudeCliAgentRunner', () => {
       { type: 'error', message: 'spawn claude ENOENT', recoverable: false },
       { type: 'finished', reason: 'error', usage: { input: 0, output: 0 } },
     ]);
+  });
+
+  describe('with mcpServers configured', () => {
+    let scratchDir: string;
+
+    beforeEach(() => {
+      scratchDir = mkdtempSync(join(tmpdir(), 'mcp-runner-test-'));
+    });
+
+    afterEach(() => {
+      rmSync(scratchDir, { recursive: true, force: true });
+    });
+
+    it('writes config JSON and adds --mcp-config flag when servers are non-empty', async () => {
+      const fake = new FakeChildProcess();
+      let captured: readonly string[] = [];
+      const configPath = join(scratchDir, 'mcp.json');
+      const runner = new ClaudeCliAgentRunner({
+        spawn: (_cmd, args) => {
+          captured = args;
+          return asChildProcess(fake);
+        },
+        mcpServers: [
+          {
+            name: 'agentry-slack',
+            command: '/usr/bin/node',
+            args: ['/abs/path/server.js'],
+            env: { SLACK_BOT_TOKEN: 'xoxb-test' },
+          },
+        ],
+        mcpConfigPath: configPath,
+      });
+      const events = collect(runner.run(baseInput));
+      fake.pushStdoutLine(
+        '{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":0,"output_tokens":0}}',
+      );
+      fake.emitExit(0);
+      await events;
+
+      expect(captured).toContain('--mcp-config');
+      const idx = captured.indexOf('--mcp-config');
+      expect(captured[idx + 1]).toBe(configPath);
+
+      const written = JSON.parse(readFileSync(configPath, 'utf8'));
+      expect(written).toEqual({
+        mcpServers: {
+          'agentry-slack': {
+            command: '/usr/bin/node',
+            args: ['/abs/path/server.js'],
+            env: { SLACK_BOT_TOKEN: 'xoxb-test' },
+          },
+        },
+      });
+
+      const mode = statSync(configPath).mode & 0o777;
+      expect(mode).toBe(0o600);
+    });
+
+    it('omits --mcp-config when mcpServers is undefined', async () => {
+      const fake = new FakeChildProcess();
+      let captured: readonly string[] = [];
+      const runner = new ClaudeCliAgentRunner({
+        spawn: (_cmd, args) => {
+          captured = args;
+          return asChildProcess(fake);
+        },
+      });
+      const events = collect(runner.run(baseInput));
+      fake.pushStdoutLine(
+        '{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":0,"output_tokens":0}}',
+      );
+      fake.emitExit(0);
+      await events;
+
+      expect(captured).not.toContain('--mcp-config');
+    });
+
+    it('omits --mcp-config when mcpServers is an empty list', async () => {
+      const fake = new FakeChildProcess();
+      let captured: readonly string[] = [];
+      const runner = new ClaudeCliAgentRunner({
+        spawn: (_cmd, args) => {
+          captured = args;
+          return asChildProcess(fake);
+        },
+        mcpServers: [],
+      });
+      const events = collect(runner.run(baseInput));
+      fake.pushStdoutLine(
+        '{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":0,"output_tokens":0}}',
+      );
+      fake.emitExit(0);
+      await events;
+
+      expect(captured).not.toContain('--mcp-config');
+    });
   });
 
   it('emits error + finished{error} when child exits without a result line, including stderr tail', async () => {

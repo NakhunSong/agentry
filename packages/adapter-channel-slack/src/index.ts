@@ -22,6 +22,11 @@ export {
   type SlackInboundChannelOptions,
 } from './slack-inbound-channel.js';
 export {
+  SLACK_MCP_SERVER_NAME,
+  type SlackMcpServerConfigOptions,
+  slackMcpServerConfig,
+} from './slack-mcp-config.js';
+export {
   SlackOutboundChannel,
   SlackOutboundChannelError,
   type SlackOutboundChannelOptions,

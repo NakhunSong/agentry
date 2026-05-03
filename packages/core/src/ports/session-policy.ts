@@ -18,4 +18,9 @@ export interface SessionPolicy {
   computeNativeRef(event: IncomingEvent): ChannelNativeRef;
   idleTimeoutMinutes(): number;
   shouldEndOn(event: SessionLifecycleEvent): boolean;
+  // Optional: agent-facing context (channel id, thread id, ...). Returned
+  // values are prepended to the agent prompt under `CHANNEL_CONTEXT_HEADER`
+  // so the agent can resolve "this channel"-style references when calling
+  // adapter MCP tools. Empty / missing → no header in prompt.
+  toAgentContext?(event: IncomingEvent): Readonly<Record<string, string>>;
 }
