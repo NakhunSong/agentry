@@ -30,6 +30,18 @@ Use this tool when the user's question references prior context the agent
 hasn't seen — for example, "summarize today's QA reports" or "what did the
 deploy bot say about the last release".
 
+### `slack_get_user_info`
+
+Resolve a Slack user ID (e.g. `U0123456`) to a display name. Returns `id`,
+`name`, optional `real_name` / `display_name`, and `is_bot`. Use this after
+`slack_get_channel_history` so your reply refers to people by name rather
+than by raw ID.
+
+Pair the two tools: get history → collect distinct `user` IDs → call
+`slack_get_user_info` for each → write the summary using human-readable
+names. Do not call it for `bot_id` values; those are bot identifiers, not
+user IDs.
+
 #### Resolving "this channel"
 
 The user prompt is prefixed with a `[Channel context]` block (header is

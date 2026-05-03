@@ -12,6 +12,11 @@ import {
   getChannelHistoryInputShape,
   SLACK_GET_CHANNEL_HISTORY_TOOL_NAME,
 } from './tools/get-channel-history.js';
+import {
+  getUserInfo,
+  getUserInfoInputShape,
+  SLACK_GET_USER_INFO_TOOL_NAME,
+} from './tools/get-user-info.js';
 
 const SERVER_VERSION = '0.0.0';
 
@@ -28,7 +33,7 @@ async function main(): Promise<void> {
     {
       capabilities: { tools: {} },
       instructions:
-        'Tools for reading Slack channel context. Bot-authored messages are preserved with bot_id intact so the agent can reason about content posted by other bots in the same channel.',
+        'Tools for reading Slack channel context. `slack_get_channel_history` returns recent messages with bot_id preserved (other bots distinguishable from humans). `slack_get_user_info` resolves a user ID to a display name so the agent can refer to humans by name in its replies.',
     },
   );
 
@@ -40,6 +45,16 @@ async function main(): Promise<void> {
       inputSchema: getChannelHistoryInputShape,
     },
     async (args) => getChannelHistory(client, args),
+  );
+
+  server.registerTool(
+    SLACK_GET_USER_INFO_TOOL_NAME,
+    {
+      description:
+        'Look up a Slack user by ID. Returns id, name, optional real_name / display_name, and is_bot. Use after `slack_get_channel_history` returns a `user` field that needs resolution to a human-readable name.',
+      inputSchema: getUserInfoInputShape,
+    },
+    async (args) => getUserInfo(client, args),
   );
 
   const transport = new StdioServerTransport();
