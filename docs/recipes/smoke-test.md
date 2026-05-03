@@ -55,7 +55,18 @@ After **Install to Workspace**:
 
 Invite the bot to a public channel: `/invite @agentry-smoke`.
 
-## 2. Bring up Postgres
+## 2. Build the workspace
+
+The migrator (`apps/cli`) and the server (`apps/server`) both run from
+the host — neither has a Dockerfile yet (Phase 5 territory). Build once
+upfront; later steps reuse the same `dist/`.
+
+```bash
+pnpm install
+pnpm build
+```
+
+## 3. Bring up Postgres
 
 ```bash
 docker compose up -d
@@ -65,17 +76,19 @@ docker compose logs -f postgres   # optional: wait for "ready to accept connecti
 The compose file pins `pgvector/pgvector:pg16`; the `vector` extension
 is created by the migration, not the image entrypoint.
 
-## 3. Apply migrations
+## 4. Apply migrations
 
 ```bash
-pnpm install
-pnpm build
-
 # Match the dim VoyageEmbeddingProvider produces (default voyage-3.5 → 1024)
 EMBEDDING_DIM=1024 \
 POSTGRES_URL=postgres://agentry:agentry@localhost:5432/agentry \
 node apps/cli/dist/main.js migrate
 ```
+
+Run via the host CLI rather than `docker compose run psql -f …`: the
+migrator records a `_agentry_migrations` row per applied file so
+re-running is a no-op, and that bookkeeping is in workspace TypeScript,
+not the SQL file itself.
 
 Expected output:
 
@@ -92,7 +105,7 @@ docker compose exec postgres psql -U agentry -d agentry -c '\dt'
 # tenants, turns
 ```
 
-## 4. Configure secrets
+## 5. Configure secrets
 
 ```bash
 cp .env.example .env
@@ -103,7 +116,7 @@ cp .env.example .env
 #   VOYAGE_API_KEY=pa-…               (from voyageai.com)
 ```
 
-## 5. Start the tunnel
+## 6. Start the tunnel
 
 ```bash
 ngrok http 3001
@@ -112,9 +125,9 @@ ngrok http 3001
 Copy the `https://…ngrok.io` URL into the Slack app's **Event
 Subscriptions → Request URL** as `<URL>/slack/events`. Slack will issue
 a verification handshake the moment you save; if the server isn't
-running yet, save in step 7 instead.
+running yet, save in step 8 instead.
 
-## 6. (Optional) Run the unit suite
+## 7. (Optional) Run the unit suite
 
 Sanity-check the build before booting the server:
 
@@ -122,7 +135,7 @@ Sanity-check the build before booting the server:
 pnpm typecheck && pnpm lint && pnpm test && pnpm depcheck
 ```
 
-## 7. Boot the server
+## 8. Boot the server
 
 ```bash
 node --env-file=.env apps/server/dist/main.js
@@ -147,7 +160,7 @@ forwards to. The Hono `/health` endpoint runs on `PORT` (default 3000).
 }
 ```
 
-## 8. Trigger a mention
+## 9. Trigger a mention
 
 In the channel where the bot was invited:
 
@@ -157,7 +170,7 @@ In the channel where the bot was invited:
 
 Within a few seconds you should see a thread reply from the bot.
 
-## 9. Verify the DB
+## 10. Verify the DB
 
 ```bash
 docker compose exec postgres psql -U agentry -d agentry <<'SQL'
