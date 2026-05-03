@@ -10,6 +10,7 @@ import { AgentryConfigSchema, compose, loadSecrets } from '@agentry/runtime';
 import { serve } from '@hono/node-server';
 import { WebClient } from '@slack/web-api';
 import { Hono } from 'hono';
+import { detectEnvShadowConflicts, formatEnvShadowError } from './env-shadow-check.js';
 
 function parsePort(raw: string, label: string): number {
   const port = Number.parseInt(raw, 10);
@@ -20,6 +21,16 @@ function parsePort(raw: string, label: string): number {
 }
 
 async function main(): Promise<void> {
+  // Run BEFORE loadSecrets so the user sees the env-shadow error message
+  // (which points at the root cause) instead of a downstream Slack/DB
+  // auth-failure that hides it. Skipped silently when the .env file is
+  // absent (e.g., production deployments injecting env vars directly).
+  const envFilePath = process.env.AGENTRY_ENV_FILE ?? '.env';
+  const conflicts = detectEnvShadowConflicts(envFilePath, process.env);
+  if (conflicts.length > 0) {
+    throw new Error(formatEnvShadowError(envFilePath, conflicts));
+  }
+
   const secrets = loadSecrets();
   const config = AgentryConfigSchema.parse({
     agentWorkdir: process.env.AGENT_WORKDIR ?? './seed/agent-workdir',

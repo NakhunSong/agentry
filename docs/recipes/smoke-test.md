@@ -143,7 +143,10 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm depcheck
 ```bash
 # Node `--env-file` does NOT override variables already exported in the
 # parent shell. If a previous session exported these, .env is silently
-# shadowed and the server boots with stale values.
+# shadowed. apps/server now fail-fasts with an `env shadow detected`
+# error at boot when this happens — this `unset` keeps the shell clean
+# so you avoid hitting that path. Override the path with
+# `AGENTRY_ENV_FILE=.env.production` if your file is not `.env`.
 unset SLACK_BOT_TOKEN SLACK_SIGNING_SECRET POSTGRES_URL VOYAGE_API_KEY
 
 node --env-file=.env apps/server/dist/main.js

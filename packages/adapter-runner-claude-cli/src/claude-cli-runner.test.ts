@@ -1,12 +1,12 @@
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import type { AgentEvent } from '@agentry/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ClaudeCliAgentRunner } from './claude-cli-runner.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ClaudeCliAgentRunner, cleanupMcpConfig } from './claude-cli-runner.js';
 
 class FakeChildProcess extends EventEmitter {
   stdin = new PassThrough();
@@ -255,6 +255,63 @@ describe('ClaudeCliAgentRunner', () => {
       await events;
 
       expect(captured).not.toContain('--mcp-config');
+    });
+  });
+
+  describe('cleanupMcpConfig', () => {
+    let scratchDir: string;
+
+    beforeEach(() => {
+      scratchDir = mkdtempSync(join(tmpdir(), 'mcp-cleanup-test-'));
+    });
+
+    afterEach(() => {
+      rmSync(scratchDir, { recursive: true, force: true });
+    });
+
+    it('unlinks the file when present', () => {
+      const path = join(scratchDir, 'present.json');
+      writeFileSync(path, '{}');
+      expect(existsSync(path)).toBe(true);
+      cleanupMcpConfig(path);
+      expect(existsSync(path)).toBe(false);
+    });
+
+    it('is idempotent when the file is already gone', () => {
+      const path = join(scratchDir, 'missing.json');
+      expect(existsSync(path)).toBe(false);
+      expect(() => cleanupMcpConfig(path)).not.toThrow();
+    });
+  });
+
+  describe('cleanup registration on signals', () => {
+    it('registers exit, SIGINT, and SIGTERM listeners when the runner owns the tempfile path', () => {
+      const onceSpy = vi.spyOn(process, 'once');
+      const fake = new FakeChildProcess();
+      // mcpConfigPath omitted ⇒ runner generates its own path AND registers
+      // cleanup. We assert against process.once instead of the actual signal
+      // path so the test does not pollute os.tmpdir() across runs.
+      try {
+        new ClaudeCliAgentRunner({
+          spawn: () => asChildProcess(fake),
+          mcpServers: [{ name: 'agentry-x', command: '/usr/bin/node', args: ['/abs/x.js'] }],
+        });
+        const registeredEvents = onceSpy.mock.calls.map((c) => c[0]);
+        expect(registeredEvents).toContain('exit');
+        expect(registeredEvents).toContain('SIGINT');
+        expect(registeredEvents).toContain('SIGTERM');
+      } finally {
+        // Drive the cleanup synchronously so the auto-generated tempfile is
+        // unlinked immediately instead of relying on `exit` at test-runner
+        // shutdown.
+        for (const [event, handler] of onceSpy.mock.calls) {
+          if (event === 'exit' && typeof handler === 'function') {
+            handler();
+            break;
+          }
+        }
+        onceSpy.mockRestore();
+      }
     });
   });
 
