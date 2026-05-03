@@ -1,15 +1,23 @@
-import type { ChannelKind, InboundChannel, IncomingEvent, Logger } from '@agentry/core';
+import type { ChannelKind, InboundChannel, IncomingEvent, Logger, TenantId } from '@agentry/core';
 import { App } from '@slack/bolt';
 import { SLACK_CHANNEL_KIND } from './slack-channel-kinds.js';
 import {
   mapAppMentionToIncomingEvent,
   type SlackAppMentionEnvelope,
 } from './slack-event-mapping.js';
+import type { SlackHistoryBackfiller } from './slack-history-backfiller.js';
 import { verifySlackScopes } from './slack-scope-verifier.js';
 
-// Required for receiving channel mentions and replying (excludes thread
-// backfill scopes — those belong to PR2 when the backfill path lands).
-export const SLACK_REQUIRED_SCOPES_PR1: readonly string[] = ['app_mentions:read', 'chat:write'];
+// Channel mention + thread backfill scopes. Reading prior thread messages
+// requires `*:history` per channel type the bot is invited to.
+export const SLACK_REQUIRED_SCOPES: readonly string[] = [
+  'app_mentions:read',
+  'chat:write',
+  'channels:history',
+  'groups:history',
+];
+
+const DEFAULT_TENANT: TenantId = 'default';
 
 export interface SlackInboundChannelOptions {
   readonly botToken: string;
@@ -21,6 +29,11 @@ export interface SlackInboundChannelOptions {
   readonly app?: App;
   readonly fetch?: typeof globalThis.fetch;
   readonly requiredScopes?: readonly string[];
+  // Optional thread-history backfill: when set, the channel calls
+  // backfillIfNeeded on first contact and forwards synthetic events
+  // (history-only) to the handler before the live event.
+  readonly backfiller?: SlackHistoryBackfiller;
+  readonly resolveTenant?: (event: IncomingEvent) => TenantId;
 }
 
 export class SlackInboundChannel implements InboundChannel {
@@ -47,7 +60,7 @@ export class SlackInboundChannel implements InboundChannel {
     this.started = true;
     if (signal.aborted) return;
 
-    const required = this.opts.requiredScopes ?? SLACK_REQUIRED_SCOPES_PR1;
+    const required = this.opts.requiredScopes ?? SLACK_REQUIRED_SCOPES;
     await verifySlackScopes(this.opts.botToken, required, this.opts.fetch);
 
     const app =
@@ -58,6 +71,7 @@ export class SlackInboundChannel implements InboundChannel {
       });
 
     app.event('app_mention', async ({ event, body, logger }) => {
+      const log = this.opts.logger ?? logger;
       try {
         const b = body as { event_id?: unknown; team_id?: unknown };
         const envelope: SlackAppMentionEnvelope = {
@@ -65,14 +79,28 @@ export class SlackInboundChannel implements InboundChannel {
           event_id: typeof b.event_id === 'string' ? b.event_id : '',
           team_id: typeof b.team_id === 'string' ? b.team_id : '',
         };
-        const incoming = mapAppMentionToIncomingEvent(envelope);
-        await handler(incoming);
+        const live = mapAppMentionToIncomingEvent(envelope);
+        const tenant = (this.opts.resolveTenant ?? (() => DEFAULT_TENANT))(live);
+
+        // Inner try/catch around backfill ONLY: a backfill failure must not
+        // drop the live event. Without this, a transient Slack API error
+        // (rate limit, network blip) would silently drop the user's mention.
+        let synthetics: readonly IncomingEvent[] = [];
+        if (this.opts.backfiller) {
+          try {
+            synthetics = await this.opts.backfiller.backfillIfNeeded(live, tenant);
+          } catch (err) {
+            log.warn({ err }, 'slack history backfill failed; proceeding without synthetics');
+          }
+        }
+
+        for (const synth of synthetics) await handler(synth);
+        await handler(live);
       } catch (err) {
         // Log and swallow: failing here would cause Bolt to leave the request
         // un-acked, prompting Slack to redeliver (idempotency handles the
         // dup but we'd burn time on every redelivery). Errors after enqueue
         // are the JobRunner's concern.
-        const log = this.opts.logger ?? logger;
         log.error({ err }, 'slack app_mention handling failed');
       }
     });

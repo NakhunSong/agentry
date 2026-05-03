@@ -10,5 +10,8 @@
   },
   "include": ["src/**/*"],
   "exclude": ["**/*.test.ts", "**/*.spec.ts", "dist", "node_modules"],
-  "references": [{ "path": "../../packages/runtime" }]
+  "references": [
+    { "path": "../../packages/adapter-channel-slack" },
+    { "path": "../../packages/runtime" }
+  ]
 }

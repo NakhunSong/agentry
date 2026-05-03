@@ -23,6 +23,16 @@ import { Pool } from 'pg';
 import type { AgentryConfig } from './config/agentry-config.js';
 import type { Secrets } from './config/secrets.js';
 
+export interface BuildChannelsDeps {
+  readonly sessionStore: SessionStore;
+}
+
+export interface BuildChannelsResult {
+  readonly inboundChannels?: readonly InboundChannel[];
+  readonly outboundChannels?: ReadonlyMap<ChannelKind, OutboundChannel>;
+  readonly sessionPolicies?: ReadonlyMap<ChannelKind, SessionPolicy>;
+}
+
 export interface ComposeArgs {
   readonly config: AgentryConfig;
   readonly secrets: Secrets;
@@ -32,11 +42,18 @@ export interface ComposeArgs {
   readonly spawn?: SpawnFn;
   readonly loggerDestination?: NodeJS.WritableStream;
   // Channel registry. Empty by default — server boots and serves /health,
-  // but `handleIncoming` will throw on dispatch until channels are wired
-  // (i.e. until #18 ships the Slack adapter).
+  // but `handleIncoming` will throw on dispatch until channels are wired.
   readonly inboundChannels?: readonly InboundChannel[];
   readonly outboundChannels?: ReadonlyMap<ChannelKind, OutboundChannel>;
   readonly sessionPolicies?: ReadonlyMap<ChannelKind, SessionPolicy>;
+  // Channel adapters that need access to compose-built infrastructure
+  // (e.g. SlackHistoryBackfiller wants the SessionStore) provide a factory
+  // here. When supplied, its result wins over the static channel options
+  // above; the factory is invoked AFTER storage init and BEFORE
+  // makeHandleIncomingMessage. May be sync or async.
+  readonly buildChannels?: (
+    deps: BuildChannelsDeps,
+  ) => BuildChannelsResult | Promise<BuildChannelsResult>;
   // Single-tenant deployments default to 'default'. Multi-tenant deployments
   // MUST override with a real per-event tenant resolver.
   readonly resolveTenant?: (event: IncomingEvent) => TenantId;
@@ -87,13 +104,18 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
     },
   });
 
+  const built = args.buildChannels ? await args.buildChannels({ sessionStore }) : undefined;
+  const inboundChannels = built?.inboundChannels ?? args.inboundChannels ?? [];
+  const outboundChannels = built?.outboundChannels ?? args.outboundChannels ?? new Map();
+  const sessionPolicies = built?.sessionPolicies ?? args.sessionPolicies ?? new Map();
+
   const handleIncoming = makeHandleIncomingMessage({
     sessionStore,
     knowledgeStore,
     agentRunner,
     jobRunner,
-    sessionPolicies: args.sessionPolicies ?? new Map(),
-    outboundChannels: args.outboundChannels ?? new Map(),
+    sessionPolicies,
+    outboundChannels,
     resolveTenant: args.resolveTenant ?? (() => DEFAULT_TENANT),
     agentWorkdir: config.agentWorkdir,
     logger,
@@ -107,7 +129,7 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
     jobRunner,
     embeddingProvider,
     handleIncoming,
-    inboundChannels: args.inboundChannels ?? [],
+    inboundChannels,
     shutdown: async () => {
       // jobRunner.drain() must complete before pool.end() — running jobs may
       // still need the pool to record turns or query knowledge.

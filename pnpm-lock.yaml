@@ -51,6 +51,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@agentry/adapter-channel-slack':
+        specifier: workspace:*
+        version: link:../../packages/adapter-channel-slack
       '@agentry/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -60,6 +63,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.6
         version: 1.19.14(hono@4.12.15)
+      '@slack/web-api':
+        specifier: ^7.15.1
+        version: 7.15.1
       hono:
         specifier: ^4.10.4
         version: 4.12.15

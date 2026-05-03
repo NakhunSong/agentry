@@ -1,5 +1,6 @@
 import type { IncomingEvent } from '@agentry/core';
 import { SLACK_CHANNEL_KIND } from './slack-channel-kinds.js';
+import { slackNativeRef, slackTsToDate } from './slack-conventions.js';
 
 // Subset of the Slack `app_mention` envelope we depend on. Bolt's published
 // types are looser; this is the contract we read at runtime, so we pin it
@@ -48,7 +49,7 @@ export function mapAppMentionToIncomingEvent(envelope: SlackAppMentionEnvelope):
   const threadTs = event.thread_ts ?? event.ts;
   return {
     channelKind: SLACK_CHANNEL_KIND,
-    channelNativeRef: `slack:${event.channel}:${threadTs}`,
+    channelNativeRef: slackNativeRef(event.channel, threadTs),
     author: { channelUserId: event.user },
     payload: { text: event.text ?? '' },
     threading: {
@@ -57,7 +58,7 @@ export function mapAppMentionToIncomingEvent(envelope: SlackAppMentionEnvelope):
       thread_ts: threadTs,
       team_id,
     },
-    receivedAt: new Date(Number.parseFloat(event.event_ts) * 1000),
+    receivedAt: slackTsToDate(event.event_ts),
     idempotencyKey: event_id,
   };
 }

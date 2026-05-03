@@ -7,11 +7,15 @@ import type {
 } from '@agentry/core';
 import { WebClient } from '@slack/web-api';
 import { SLACK_CHANNEL_KIND } from './slack-channel-kinds.js';
+import { slackTsToDate } from './slack-conventions.js';
 
 export interface SlackOutboundChannelOptions {
   readonly botToken: string;
-  // Test seam: inject a pre-built WebClient (used by unit tests with mocked
-  // chat.postMessage). When omitted, the constructor builds one from token.
+  // Shared WebClient seam. Production: the composition root passes one
+  // client to both the outbound channel (for chat.postMessage) and the
+  // history backfiller (for conversations.replies) so both share a
+  // connection pool. Tests: inject a mock with the methods the test
+  // exercises.
   readonly client?: WebClient;
 }
 
@@ -58,7 +62,7 @@ export class SlackOutboundChannel implements OutboundChannel {
 
     return {
       messageId: result.ts,
-      postedAt: new Date(Number.parseFloat(result.ts) * 1000),
+      postedAt: slackTsToDate(result.ts),
       metadata: { channel, thread_ts: threadTs },
     };
   }
