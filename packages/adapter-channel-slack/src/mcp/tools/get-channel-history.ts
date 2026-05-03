@@ -1,6 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { WebClient } from '@slack/web-api';
 import { z } from 'zod';
+import { errorResult } from './tool-result.js';
 
 export const SLACK_GET_CHANNEL_HISTORY_TOOL_NAME = 'slack_get_channel_history';
 
@@ -81,12 +82,5 @@ function toHistoryMessage(m: {
     ...(m.username !== undefined ? { username: m.username } : {}),
     text: m.text ?? '',
     ...(m.thread_ts !== undefined ? { thread_ts: m.thread_ts } : {}),
-  };
-}
-
-function errorResult(message: string): CallToolResult {
-  return {
-    content: [{ type: 'text', text: message }],
-    isError: true,
   };
 }

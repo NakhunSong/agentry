@@ -8,13 +8,18 @@ import {
 import type { SlackHistoryBackfiller } from './slack-history-backfiller.js';
 import { verifySlackScopes } from './slack-scope-verifier.js';
 
-// Channel mention + thread backfill scopes. Reading prior thread messages
-// requires `*:history` per channel type the bot is invited to.
+// Channel mention + thread backfill + user/channel lookup scopes. Reading
+// prior thread messages requires `*:history` per channel type the bot is
+// invited to. `users:read` powers `slack_get_user_info` (display-name
+// resolution); `*:read` powers `agentry-slack list-channels`.
 export const SLACK_REQUIRED_SCOPES: readonly string[] = [
   'app_mentions:read',
   'chat:write',
   'channels:history',
   'groups:history',
+  'channels:read',
+  'groups:read',
+  'users:read',
 ];
 
 const DEFAULT_TENANT: TenantId = 'default';
