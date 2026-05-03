@@ -33,14 +33,22 @@ deploy bot say about the last release".
 ### `slack_get_user_info`
 
 Resolve a Slack user ID (e.g. `U0123456`) to a display name. Returns `id`,
-`name`, optional `real_name` / `display_name`, and `is_bot`. Use this after
-`slack_get_channel_history` so your reply refers to people by name rather
-than by raw ID.
+`name`, optional `real_name` / `display_name`, and `is_bot`.
 
-Pair the two tools: get history → collect distinct `user` IDs → call
-`slack_get_user_info` for each → write the summary using human-readable
-names. Do not call it for `bot_id` values; those are bot identifiers, not
-user IDs.
+**Always resolve `user:` IDs before replying.** A user-facing reply must
+not contain raw `U...` IDs — Slack users do not recognize them and the
+output looks like a leaked internal token. Workflow:
+
+1. Call `slack_get_channel_history` to read recent messages.
+2. Collect every distinct `user:` value in the messages you plan to cite.
+3. Call `slack_get_user_info` once per distinct ID (these calls are
+   independent — Claude Code may parallelize them).
+4. Write the summary using `display_name` (fallback `real_name`, then
+   `name`) instead of the raw ID.
+
+Do not call it for `bot_id` values — those are bot identifiers, not user
+IDs, and the API will return `user_not_found`. Cite bots by their
+`username` field from `slack_get_channel_history` instead.
 
 #### Resolving "this channel"
 

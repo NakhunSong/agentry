@@ -38,6 +38,9 @@ oauth_config:
       - chat:write
       - channels:history
       - groups:history
+      - channels:read
+      - groups:read
+      - users:read
 settings:
   event_subscriptions:
     request_url: https://REPLACE_WITH_NGROK_URL.ngrok.io/slack/events
@@ -138,6 +141,11 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm depcheck
 ## 8. Boot the server
 
 ```bash
+# Node `--env-file` does NOT override variables already exported in the
+# parent shell. If a previous session exported these, .env is silently
+# shadowed and the server boots with stale values.
+unset SLACK_BOT_TOKEN SLACK_SIGNING_SECRET POSTGRES_URL VOYAGE_API_KEY
+
 node --env-file=.env apps/server/dist/main.js
 ```
 
@@ -199,7 +207,7 @@ DoD met when:
 | Symptom                                                   | Cause / fix                                                                                                                                                                |
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SecretsValidationError` on startup                       | A required `.env` key is missing or malformed. The error names every offending key.                                                                                        |
-| `missing required scopes`                                 | Reinstall the Slack app — `channels:history` / `groups:history` were added in the PR2 batch and existing installs need to re-grant.                                        |
+| `missing required scopes`                                 | Reinstall the Slack app — the manifest scope set grew across `#18` PR2 (`*:history`) and `#26` PR2 (`channels:read` / `groups:read` / `users:read`); existing installs must re-grant.       |
 | Slack times out / redelivers events                       | Backfill on the inbound hot path can blow the 3s ack budget on large threads (see issue #63). Reduce thread size for the smoke test, or move backfill offline (followup).  |
 | `conversations.replies failed: channel_not_found`         | The bot isn't a member of the channel. `/invite @agentry-smoke` first.                                                                                                     |
 | `vector(1024) does not match embedding dimension N`       | The VoyageEmbeddingProvider model returned a different dim than the column. Re-run migrate with `EMBEDDING_DIM=N` after dropping the DB volume (`docker compose down -v`). |
