@@ -13,6 +13,7 @@ import type {
   JobRunner,
   KnowledgeStore,
   Logger,
+  McpServerConfig,
   OutboundChannel,
   SessionPolicy,
   SessionStore,
@@ -31,6 +32,9 @@ export interface BuildChannelsResult {
   readonly inboundChannels?: readonly InboundChannel[];
   readonly outboundChannels?: ReadonlyMap<ChannelKind, OutboundChannel>;
   readonly sessionPolicies?: ReadonlyMap<ChannelKind, SessionPolicy>;
+  // Per ARCHITECTURE.md §11.1 — channel-adapter MCP servers the runtime
+  // forwards to the agent runner.
+  readonly mcpServers?: readonly McpServerConfig[];
 }
 
 export interface ComposeArgs {
@@ -94,10 +98,6 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
     embeddings: embeddingProvider,
   });
 
-  const agentRunner = new ClaudeCliAgentRunner(
-    args.spawn !== undefined ? { spawn: args.spawn } : {},
-  );
-
   const jobRunner = new InMemoryJobRunner({
     onError: (err, key) => {
       logger.error({ err, key }, 'job failed');
@@ -108,6 +108,12 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
   const inboundChannels = built?.inboundChannels ?? args.inboundChannels ?? [];
   const outboundChannels = built?.outboundChannels ?? args.outboundChannels ?? new Map();
   const sessionPolicies = built?.sessionPolicies ?? args.sessionPolicies ?? new Map();
+  const mcpServers = built?.mcpServers ?? [];
+
+  const agentRunner = new ClaudeCliAgentRunner({
+    ...(args.spawn !== undefined ? { spawn: args.spawn } : {}),
+    ...(mcpServers.length > 0 ? { mcpServers } : {}),
+  });
 
   const handleIncoming = makeHandleIncomingMessage({
     sessionStore,

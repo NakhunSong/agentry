@@ -1,6 +1,16 @@
 import { type ChildProcess, spawn as defaultSpawn, type SpawnOptions } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { AgentEvent, AgentRunInput, AgentRunner, TokenUsage } from '@agentry/core';
+import type {
+  AgentEvent,
+  AgentRunInput,
+  AgentRunner,
+  McpServerConfig,
+  TokenUsage,
+} from '@agentry/core';
 import { createParserState, finishedEvent, parseLine } from './stream-parser.js';
 
 export type SpawnFn = (
@@ -12,6 +22,12 @@ export type SpawnFn = (
 export interface ClaudeCliAgentRunnerOptions {
   readonly claudeBinary?: string;
   readonly spawn?: SpawnFn;
+  readonly mcpServers?: readonly McpServerConfig[];
+  // Test seam: when supplied, the runner writes to this path and skips the
+  // process-exit cleanup hook (the test owns lifecycle of the file). In
+  // production the runner generates a path under `os.tmpdir()` and registers
+  // its own cleanup.
+  readonly mcpConfigPath?: string;
 }
 
 const ZERO_USAGE: TokenUsage = { input: 0, output: 0 };
@@ -27,13 +43,25 @@ const BASE_CLI_ARGS = [
 
 export class ClaudeCliAgentRunner implements AgentRunner {
   readonly kind = 'claude_cli';
+  private readonly mcpConfigPath: string | undefined;
 
-  constructor(private readonly options: ClaudeCliAgentRunnerOptions = {}) {}
+  constructor(private readonly options: ClaudeCliAgentRunnerOptions = {}) {
+    const servers = options.mcpServers;
+    if (servers !== undefined && servers.length > 0) {
+      const callerOwnsPath = options.mcpConfigPath !== undefined;
+      const configPath = options.mcpConfigPath ?? defaultMcpConfigPath();
+      writeMcpConfigJson(configPath, servers);
+      if (!callerOwnsPath) registerMcpConfigCleanup(configPath);
+      this.mcpConfigPath = configPath;
+    } else {
+      this.mcpConfigPath = undefined;
+    }
+  }
 
   async *run(input: AgentRunInput): AsyncIterable<AgentEvent> {
     const binary = this.options.claudeBinary ?? 'claude';
     const spawnFn = this.options.spawn ?? defaultSpawn;
-    const args = buildArgs(input);
+    const args = buildArgs(input, this.mcpConfigPath);
 
     const child = spawnFn(binary, args, {
       cwd: input.workdir,
@@ -119,7 +147,45 @@ export class ClaudeCliAgentRunner implements AgentRunner {
   }
 }
 
-function buildArgs(input: AgentRunInput): readonly string[] {
-  if (input.resumeKey === undefined) return BASE_CLI_ARGS;
-  return [...BASE_CLI_ARGS, '--resume', input.resumeKey];
+function buildArgs(input: AgentRunInput, mcpConfigPath: string | undefined): readonly string[] {
+  const args: string[] = [...BASE_CLI_ARGS];
+  if (mcpConfigPath !== undefined) {
+    args.push('--mcp-config', mcpConfigPath);
+  }
+  if (input.resumeKey !== undefined) {
+    args.push('--resume', input.resumeKey);
+  }
+  return args;
+}
+
+function defaultMcpConfigPath(): string {
+  return join(tmpdir(), `agentry-mcp-${process.pid}-${randomUUID()}.json`);
+}
+
+interface ClaudeMcpServerJson {
+  readonly command: string;
+  readonly args?: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+}
+
+function writeMcpConfigJson(filePath: string, servers: readonly McpServerConfig[]): void {
+  const entries: Record<string, ClaudeMcpServerJson> = {};
+  for (const s of servers) {
+    entries[s.name] = {
+      command: s.command,
+      ...(s.args !== undefined ? { args: s.args } : {}),
+      ...(s.env !== undefined ? { env: s.env } : {}),
+    };
+  }
+  writeFileSync(filePath, JSON.stringify({ mcpServers: entries }), { mode: 0o600 });
+}
+
+function registerMcpConfigCleanup(filePath: string): void {
+  process.once('exit', () => {
+    try {
+      unlinkSync(filePath);
+    } catch {
+      // best effort — file may have been removed already
+    }
+  });
 }

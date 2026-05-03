@@ -685,8 +685,13 @@ choose per tool which mechanism fits.
 ### 11.1 MCP servers (recommended for structured, high-frequency tools)
 
 Each adapter MAY ship a stdio MCP server in `<adapter-package>/mcp/`. The
-composition root collects enabled servers and writes (or merges into)
-`seed/agent-workdir/.mcp.json` at startup. Claude CLI auto-loads them.
+composition root collects enabled servers from the channel-build factory and
+hands them to `ClaudeCliAgentRunner`, which serializes the list into a
+process-private tempfile (`os.tmpdir()`, mode 0600) and points Claude CLI at
+it via `--mcp-config <path>` on every spawn. Claude CLI also auto-loads any
+`.mcp.json` it discovers in `agentWorkdir`, so user-supplied servers in a
+fork's seed continue to work alongside the framework set (we deliberately do
+NOT pass `--strict-mcp-config`).
 
 Use MCP for:
 - High-frequency calls during a conversation (channel history fetch, message search)
@@ -725,16 +730,21 @@ consumer and start there. The Slack adapter ships MCP for `slack_*` tools
 ### 11.4 Composition wiring
 
 ```ts
-const slackChannel = new SlackInboundChannel(config.slack);
-const slackMcp     = new SlackMcpServer(config.slack);  // opt-in
-const slackCli     = registerSlackCli(config.slack);    // installed as bin/
-
-const mcpServers = [slackMcp /*, ...*/].filter(s => s.enabled);
-mergeAgentWorkdirMcpJson(seedDir, mcpServers);
+// In compose's buildChannels factory:
+return {
+  inboundChannels: [slackInbound],
+  outboundChannels,
+  sessionPolicies,
+  mcpServers: [slackMcpServerConfig({ botToken })],
+};
+// compose.ts then constructs ClaudeCliAgentRunner({ mcpServers }), which
+// writes a tempfile and adds `--mcp-config <path>` to every Claude CLI spawn.
 ```
 
-The agent-workdir's existing `.mcp.json` (user customizations) is preserved during
-the merge — framework-managed entries are namespaced.
+Framework-managed entries are namespaced under `agentry-*` (e.g.
+`agentry-slack`). User-supplied entries in `agentWorkdir/.mcp.json` keep their
+own names and are loaded by Claude CLI alongside the framework set; the
+runtime never reads or rewrites that file.
 
 ---
 

@@ -23,6 +23,7 @@ export type {
   ProvenanceRef,
   SourceType,
 } from './knowledge.js';
+export type { McpServerConfig } from './mcp-server.js';
 export type {
   ItemFilter,
   RetrievalMode,

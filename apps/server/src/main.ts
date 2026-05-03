@@ -3,6 +3,7 @@ import {
   SlackInboundChannel,
   SlackOutboundChannel,
   SlackSessionPolicy,
+  slackMcpServerConfig,
 } from '@agentry/adapter-channel-slack';
 import type { ChannelKind, OutboundChannel, SessionPolicy } from '@agentry/core';
 import { AgentryConfigSchema, compose, loadSecrets } from '@agentry/runtime';
@@ -54,6 +55,7 @@ async function main(): Promise<void> {
         inboundChannels: [inbound],
         outboundChannels: new Map<ChannelKind, OutboundChannel>([[policy.channelKind, outbound]]),
         sessionPolicies: new Map<ChannelKind, SessionPolicy>([[policy.channelKind, policy]]),
+        mcpServers: [slackMcpServerConfig({ botToken: secrets.SLACK_BOT_TOKEN })],
       };
     },
   });

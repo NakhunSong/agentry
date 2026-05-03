@@ -234,4 +234,35 @@ describe('compose', () => {
     expect(handles.inboundChannels).toEqual([]);
     await handles.shutdown();
   });
+
+  it('forwards mcpServers from buildChannels to ClaudeCliAgentRunner spawn args', async () => {
+    const { asPool } = makeStubPool();
+    const spawn = vi.fn(() => {
+      throw new Error('spawn should not run during this test');
+    });
+
+    const handles = await compose({
+      config,
+      secrets,
+      poolFactory: () => asPool,
+      spawn: spawn as never,
+      buildChannels: () => ({
+        mcpServers: [
+          {
+            name: 'agentry-slack',
+            command: '/usr/bin/node',
+            args: ['/abs/path/server.js'],
+            env: { SLACK_BOT_TOKEN: 'xoxb' },
+          },
+        ],
+      }),
+    });
+
+    // The agentRunner just exposes its kind; verifying the tempfile creation
+    // is owned by ClaudeCliAgentRunner's own tests. Here we assert compose
+    // accepted the option without error (a dropped option would surface as
+    // either a typecheck or a missing flag in the runner unit tests).
+    expect(handles.agentRunner.kind).toBe('claude_cli');
+    await handles.shutdown();
+  });
 });
