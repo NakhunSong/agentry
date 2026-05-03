@@ -9,9 +9,11 @@
     "dev": "tsx watch src/main.ts"
   },
   "dependencies": {
+    "@agentry/adapter-channel-slack": "workspace:*",
     "@agentry/core": "workspace:*",
     "@agentry/runtime": "workspace:*",
     "@hono/node-server": "^1.19.6",
+    "@slack/web-api": "^7.15.1",
     "hono": "^4.10.4"
   },
   "devDependencies": {

@@ -1,6 +1,7 @@
-import type { IncomingEvent, Logger } from '@agentry/core';
+import type { IncomingEvent, Logger, TenantId } from '@agentry/core';
 import type { App } from '@slack/bolt';
 import { describe, expect, it, vi } from 'vitest';
+import type { SlackHistoryBackfiller } from './slack-history-backfiller.js';
 import { SlackInboundChannel } from './slack-inbound-channel.js';
 
 // dep-cruiser forbids adapter-* → @agentry/testing imports (the testing
@@ -168,6 +169,143 @@ describe('SlackInboundChannel', () => {
       channelNativeRef: 'slack:C9:1700000000.000100',
       idempotencyKey: 'EvX',
     });
+
+    ac.abort();
+    await startPromise;
+  });
+
+  it('forwards synthetic events from the backfiller before the live event', async () => {
+    const { app, captured } = fakeApp();
+    const seen: IncomingEvent[] = [];
+    const synthetic: IncomingEvent = {
+      channelKind: 'slack',
+      channelNativeRef: 'slack:C9:1700000000.000100',
+      author: { channelUserId: 'U9' },
+      payload: { text: 'historical' },
+      threading: {
+        channel: 'C9',
+        thread_ts: '1700000000.000100',
+        message_ts: '1700000050.000100',
+        team_id: 'T1',
+      },
+      receivedAt: new Date(1_700_000_050_000),
+      idempotencyKey: 'slack-history:1700000050.000100',
+      metadata: { synthetic: true },
+    };
+    const backfiller = {
+      backfillIfNeeded: vi.fn(async () => [synthetic]),
+    } as unknown as SlackHistoryBackfiller;
+    const ch = new SlackInboundChannel({
+      ...baseOpts,
+      app,
+      backfiller,
+      fetch: fakeFetchOk(['app_mentions:read', 'chat:write', 'channels:history', 'groups:history']),
+    });
+    const ac = new AbortController();
+    const startPromise = ch.start(async (e) => {
+      seen.push(e);
+    }, ac.signal);
+    const handler = await waitForHandler(captured);
+
+    await handler({
+      event: {
+        type: 'app_mention',
+        user: 'U1',
+        text: 'hi',
+        ts: '1700000123.000200',
+        thread_ts: '1700000000.000100',
+        channel: 'C9',
+        event_ts: '1700000123.000200',
+      },
+      body: { event_id: 'EvX', team_id: 'T1' },
+      logger: silentLogger,
+    });
+
+    expect(seen.map((e) => e.idempotencyKey)).toEqual(['slack-history:1700000050.000100', 'EvX']);
+
+    ac.abort();
+    await startPromise;
+  });
+
+  it('still forwards the live event when the backfiller throws (warn logged)', async () => {
+    const { app, captured } = fakeApp();
+    const seen: IncomingEvent[] = [];
+    const warnLog = vi.fn();
+    const logger: Logger = { ...silentLogger, warn: warnLog };
+    const backfiller = {
+      backfillIfNeeded: vi.fn(async () => {
+        throw new Error('rate_limited');
+      }),
+    } as unknown as SlackHistoryBackfiller;
+    const ch = new SlackInboundChannel({
+      ...baseOpts,
+      app,
+      backfiller,
+      logger,
+      fetch: fakeFetchOk(['app_mentions:read', 'chat:write', 'channels:history', 'groups:history']),
+    });
+    const ac = new AbortController();
+    const startPromise = ch.start(async (e) => {
+      seen.push(e);
+    }, ac.signal);
+    const handler = await waitForHandler(captured);
+
+    await handler({
+      event: {
+        type: 'app_mention',
+        user: 'U1',
+        text: 'hi',
+        ts: '1700000123.000200',
+        thread_ts: '1700000000.000100',
+        channel: 'C9',
+        event_ts: '1700000123.000200',
+      },
+      body: { event_id: 'EvX', team_id: 'T1' },
+      logger,
+    });
+
+    expect(seen.map((e) => e.idempotencyKey)).toEqual(['EvX']);
+    expect(warnLog).toHaveBeenCalledOnce();
+
+    ac.abort();
+    await startPromise;
+  });
+
+  it('passes the resolveTenant result to the backfiller', async () => {
+    const { app, captured } = fakeApp();
+    const backfillIfNeeded = vi.fn(async () => []);
+    const backfiller = { backfillIfNeeded } as unknown as SlackHistoryBackfiller;
+    const resolveTenant = vi.fn((_e: IncomingEvent): TenantId => 'tenant-A');
+    const ch = new SlackInboundChannel({
+      ...baseOpts,
+      app,
+      backfiller,
+      resolveTenant,
+      fetch: fakeFetchOk(['app_mentions:read', 'chat:write', 'channels:history', 'groups:history']),
+    });
+    const ac = new AbortController();
+    const startPromise = ch.start(async () => {}, ac.signal);
+    const handler = await waitForHandler(captured);
+
+    await handler({
+      event: {
+        type: 'app_mention',
+        user: 'U1',
+        text: 'hi',
+        ts: '1700000123.000200',
+        thread_ts: '1700000000.000100',
+        channel: 'C9',
+        event_ts: '1700000123.000200',
+      },
+      body: { event_id: 'EvX', team_id: 'T1' },
+      logger: silentLogger,
+    });
+
+    expect(resolveTenant).toHaveBeenCalledOnce();
+    expect(backfillIfNeeded).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: 'EvX' }),
+      'tenant-A',
+    );
 
     ac.abort();
     await startPromise;

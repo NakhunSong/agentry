@@ -1,11 +1,19 @@
+import {
+  SlackHistoryBackfiller,
+  SlackInboundChannel,
+  SlackOutboundChannel,
+  SlackSessionPolicy,
+} from '@agentry/adapter-channel-slack';
+import type { ChannelKind, OutboundChannel, SessionPolicy } from '@agentry/core';
 import { AgentryConfigSchema, compose, loadSecrets } from '@agentry/runtime';
 import { serve } from '@hono/node-server';
+import { WebClient } from '@slack/web-api';
 import { Hono } from 'hono';
 
-function parsePort(raw: string): number {
+function parsePort(raw: string, label: string): number {
   const port = Number.parseInt(raw, 10);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`Invalid PORT: ${raw}`);
+    throw new Error(`Invalid ${label}: ${raw}`);
   }
   return port;
 }
@@ -13,11 +21,42 @@ function parsePort(raw: string): number {
 async function main(): Promise<void> {
   const secrets = loadSecrets();
   const config = AgentryConfigSchema.parse({
-    agentWorkdir: process.env['AGENT_WORKDIR'] ?? './seed/agent-workdir',
-    logging: { level: process.env['LOG_LEVEL'] ?? 'info' },
+    agentWorkdir: process.env.AGENT_WORKDIR ?? './seed/agent-workdir',
+    logging: { level: process.env.LOG_LEVEL ?? 'info' },
   });
+  const slackPort = parsePort(process.env.SLACK_PORT ?? '3001', 'SLACK_PORT');
 
-  const handles = await compose({ config, secrets });
+  const handles = await compose({
+    config,
+    secrets,
+    buildChannels: ({ sessionStore }) => {
+      // Single shared WebClient: SlackOutboundChannel posts replies; the
+      // backfiller fetches conversations.replies. Two clients would just
+      // duplicate connection pools.
+      const slackClient = new WebClient(secrets.SLACK_BOT_TOKEN);
+      const policy = new SlackSessionPolicy();
+      const outbound = new SlackOutboundChannel({
+        botToken: secrets.SLACK_BOT_TOKEN,
+        client: slackClient,
+      });
+      const backfiller = new SlackHistoryBackfiller({
+        webClient: slackClient,
+        sessionStore,
+        sessionPolicy: policy,
+      });
+      const inbound = new SlackInboundChannel({
+        botToken: secrets.SLACK_BOT_TOKEN,
+        signingSecret: secrets.SLACK_SIGNING_SECRET,
+        port: slackPort,
+        backfiller,
+      });
+      return {
+        inboundChannels: [inbound],
+        outboundChannels: new Map<ChannelKind, OutboundChannel>([[policy.channelKind, outbound]]),
+        sessionPolicies: new Map<ChannelKind, SessionPolicy>([[policy.channelKind, policy]]),
+      };
+    },
+  });
   const log = handles.logger;
   const ac = new AbortController();
 
@@ -36,7 +75,7 @@ async function main(): Promise<void> {
     }),
   );
 
-  const port = parsePort(process.env['PORT'] ?? '3000');
+  const port = parsePort(process.env.PORT ?? '3000', 'PORT');
   const server = serve({ fetch: app.fetch, port }, (info) => {
     log.info({ port: info.port }, 'agentry server listening');
   });

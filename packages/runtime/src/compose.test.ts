@@ -162,4 +162,77 @@ describe('compose', () => {
     expect(handles.inboundChannels).toBe(inbound);
     await handles.shutdown();
   });
+
+  it('invokes buildChannels with sessionStore + logger after storage init', async () => {
+    const { asPool } = makeStubPool();
+    const buildChannels = vi.fn(() => ({}));
+
+    const handles = await compose({
+      config,
+      secrets,
+      poolFactory: () => asPool,
+      buildChannels,
+    });
+
+    expect(buildChannels).toHaveBeenCalledTimes(1);
+    const deps = buildChannels.mock.calls[0]?.[0];
+    expect(deps?.sessionStore).toBe(handles.sessionStore);
+    expect(deps?.logger).toBe(handles.logger);
+    await handles.shutdown();
+  });
+
+  it('lets buildChannels result win over static inbound/outbound/policy options', async () => {
+    const { asPool } = makeStubPool();
+    const staticInbound: InboundChannel[] = [{ kind: 'static', async start() {} }];
+    const factoryInbound: InboundChannel[] = [{ kind: 'factory', async start() {} }];
+    const factoryPolicy = new StaticSessionPolicy({ channelKind: 'factory' });
+    const factoryOutbound = new RecordingOutboundChannel('factory');
+
+    const handles = await compose({
+      config,
+      secrets,
+      poolFactory: () => asPool,
+      inboundChannels: staticInbound,
+      buildChannels: () => ({
+        inboundChannels: factoryInbound,
+        outboundChannels: new Map<ChannelKind, OutboundChannel>([['factory', factoryOutbound]]),
+        sessionPolicies: new Map<ChannelKind, SessionPolicy>([['factory', factoryPolicy]]),
+      }),
+    });
+
+    expect(handles.inboundChannels).toBe(factoryInbound);
+    await handles.shutdown();
+  });
+
+  it('awaits async buildChannels factories', async () => {
+    const { asPool } = makeStubPool();
+    const factoryInbound: InboundChannel[] = [{ kind: 'async', async start() {} }];
+
+    const handles = await compose({
+      config,
+      secrets,
+      poolFactory: () => asPool,
+      buildChannels: async () => {
+        await Promise.resolve();
+        return { inboundChannels: factoryInbound };
+      },
+    });
+
+    expect(handles.inboundChannels).toBe(factoryInbound);
+    await handles.shutdown();
+  });
+
+  it('falls back to defaults when buildChannels returns an empty result', async () => {
+    const { asPool } = makeStubPool();
+
+    const handles = await compose({
+      config,
+      secrets,
+      poolFactory: () => asPool,
+      buildChannels: () => ({}),
+    });
+
+    expect(handles.inboundChannels).toEqual([]);
+    await handles.shutdown();
+  });
 });
