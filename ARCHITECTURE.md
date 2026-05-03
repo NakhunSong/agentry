@@ -252,6 +252,11 @@ interface SessionPolicy {
   computeNativeRef(event: IncomingEvent): ChannelNativeRef;
   idleTimeoutMinutes(): number;
   shouldEndOn(e: SessionLifecycleEvent): boolean;
+  // Optional. Returned key/value pairs are prepended to the agent prompt
+  // under `CHANNEL_CONTEXT_HEADER` so the agent can resolve "this channel"
+  // references when calling adapter MCP tools (see §11). Empty / missing →
+  // no header is added.
+  toAgentContext?(event: IncomingEvent): Readonly<Record<string, string>>;
 }
 
 // Open kind. Common values: 'idle_timeout' (JobRunner-fired after

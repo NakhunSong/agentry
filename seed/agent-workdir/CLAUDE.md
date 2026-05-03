@@ -30,6 +30,22 @@ Use this tool when the user's question references prior context the agent
 hasn't seen — for example, "summarize today's QA reports" or "what did the
 deploy bot say about the last release".
 
+#### Resolving "this channel"
+
+The user prompt is prefixed with a `[Channel context]` block (header is
+exported from core as `CHANNEL_CONTEXT_HEADER`). When the user says "this
+channel" or otherwise refers to the current channel, read `channelId` from
+that block and pass it as the `channel` argument to
+`slack_get_channel_history`. Example block:
+
+```
+[Channel context]
+- channelId: C0123456
+- threadTs: 1700000000.000100
+
+<user message>
+```
+
 ## Notes for fork maintainers
 
 Default skills, rules, and additional `.mcp.json` registrations are populated
