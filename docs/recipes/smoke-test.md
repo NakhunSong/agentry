@@ -181,20 +181,6 @@ DoD met when:
 - At least two rows in `turns`: `author_role='user'` (the mention) +
   `author_role='agent'` (the reply)
 
-## 10. Test backfill (optional)
-
-Reply to that mention as a human, then mention the bot a second time in
-the SAME thread (with the bot restarted in between to clear the
-in-memory `inFlight` set). The bot should still reply once, and the
-prior human message should NOT show up as a duplicate user turn —
-backfill is gated by the persistent `slackBackfilled` metadata flag set
-on first contact.
-
-```bash
-docker compose exec postgres psql -U agentry -d agentry -c \
-  "SELECT id, metadata->>'slackBackfilled' AS backfilled FROM sessions;"
-```
-
 ## Troubleshooting
 
 | Symptom                                                   | Cause / fix                                                                                                                                                                |
