@@ -180,12 +180,26 @@ function writeMcpConfigJson(filePath: string, servers: readonly McpServerConfig[
   writeFileSync(filePath, JSON.stringify({ mcpServers: entries }), { mode: 0o600 });
 }
 
+// Exported for unit tests that exercise the unlink semantics directly.
+export function cleanupMcpConfig(filePath: string): void {
+  try {
+    unlinkSync(filePath);
+  } catch {
+    // best effort — file may have been removed already
+  }
+}
+
 function registerMcpConfigCleanup(filePath: string): void {
-  process.once('exit', () => {
-    try {
-      unlinkSync(filePath);
-    } catch {
-      // best effort — file may have been removed already
-    }
-  });
+  const cleanup = () => cleanupMcpConfig(filePath);
+  // `exit` covers natural termination (event loop drained, process.exit()).
+  // SIGINT/SIGTERM are required because Node does NOT fire 'exit' when the
+  // process is killed by an unhandled signal. Note: registering ANY listener
+  // for SIGINT/SIGTERM suppresses Node's default-fatal behavior. apps/server
+  // already registers its own graceful-shutdown handlers, so default-action
+  // suppression is already in effect there. Embedders that want default
+  // signal-fatal behavior must drive their own process.exit() from a
+  // higher-priority handler — this listener does NOT re-raise.
+  process.once('exit', cleanup);
+  process.once('SIGINT', cleanup);
+  process.once('SIGTERM', cleanup);
 }
