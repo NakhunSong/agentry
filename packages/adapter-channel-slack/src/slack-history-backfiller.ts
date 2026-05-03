@@ -9,6 +9,7 @@ import {
 } from '@agentry/core';
 import type { WebClient } from '@slack/web-api';
 import { SLACK_CHANNEL_KIND } from './slack-channel-kinds.js';
+import { slackHistoryIdempotencyKey, slackNativeRef, slackTsToDate } from './slack-conventions.js';
 
 // Slack-specific session metadata uses flat-prefixed keys (e.g.
 // `slackBackfilled`) until SessionStore gains atomic deeper-merge.
@@ -83,9 +84,10 @@ export class SlackHistoryBackfiller {
     const result = await this.opts.webClient.conversations.replies({
       channel: threading.channel,
       ts: threading.thread_ts,
-      // Slack max page size; treats deep threads as truncated rather than
-      // paginating. The 3-second ack budget makes multi-page fetch risky
-      // in PR2 — followup work if real threads start hitting the cap.
+      // Slack max page size; deep threads are truncated rather than
+      // paginated. Slack's 3-second ack budget makes multi-page fetch
+      // risky on the inbound hot path; revisit if real threads exceed the
+      // cap.
       limit: 1000,
     });
     if (!result.ok || !result.messages) {
@@ -150,7 +152,7 @@ function buildSyntheticEvent(msg: BackfillMessage, threading: SlackThreadingShap
   }
   return {
     channelKind: SLACK_CHANNEL_KIND,
-    channelNativeRef: `slack:${threading.channel}:${threading.thread_ts}`,
+    channelNativeRef: slackNativeRef(threading.channel, threading.thread_ts),
     author: { channelUserId: user },
     payload: { text: msg.text ?? '' },
     threading: {
@@ -159,8 +161,8 @@ function buildSyntheticEvent(msg: BackfillMessage, threading: SlackThreadingShap
       message_ts: ts,
       team_id: threading.team_id,
     },
-    receivedAt: new Date(Number.parseFloat(ts) * 1000),
-    idempotencyKey: `slack-history:${ts}`,
+    receivedAt: slackTsToDate(ts),
+    idempotencyKey: slackHistoryIdempotencyKey(ts),
     metadata: { [SYNTHETIC_EVENT_METADATA_KEY]: true },
   };
 }

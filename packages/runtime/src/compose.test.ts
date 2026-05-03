@@ -163,7 +163,7 @@ describe('compose', () => {
     await handles.shutdown();
   });
 
-  it('invokes buildChannels with sessionStore + logger after storage init', async () => {
+  it('invokes buildChannels with the composed sessionStore after storage init', async () => {
     const { asPool } = makeStubPool();
     const buildChannels = vi.fn(() => ({}));
 
@@ -177,7 +177,6 @@ describe('compose', () => {
     expect(buildChannels).toHaveBeenCalledTimes(1);
     const deps = buildChannels.mock.calls[0]?.[0];
     expect(deps?.sessionStore).toBe(handles.sessionStore);
-    expect(deps?.logger).toBe(handles.logger);
     await handles.shutdown();
   });
 

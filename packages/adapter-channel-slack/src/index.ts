@@ -1,5 +1,11 @@
 export { SLACK_CHANNEL_KIND } from './slack-channel-kinds.js';
 export {
+  SLACK_HISTORY_IDEMPOTENCY_PREFIX,
+  slackHistoryIdempotencyKey,
+  slackNativeRef,
+  slackTsToDate,
+} from './slack-conventions.js';
+export {
   mapAppMentionToIncomingEvent,
   type SlackAppMentionEnvelope,
   SlackEventMappingError,

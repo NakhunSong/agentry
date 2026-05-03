@@ -1,4 +1,9 @@
-import type { IncomingEvent, Logger, TenantId } from '@agentry/core';
+import {
+  type IncomingEvent,
+  type Logger,
+  SYNTHETIC_EVENT_METADATA_KEY,
+  type TenantId,
+} from '@agentry/core';
 import type { App } from '@slack/bolt';
 import { describe, expect, it, vi } from 'vitest';
 import type { SlackHistoryBackfiller } from './slack-history-backfiller.js';
@@ -190,7 +195,7 @@ describe('SlackInboundChannel', () => {
       },
       receivedAt: new Date(1_700_000_050_000),
       idempotencyKey: 'slack-history:1700000050.000100',
-      metadata: { synthetic: true },
+      metadata: { [SYNTHETIC_EVENT_METADATA_KEY]: true },
     };
     const backfiller = {
       backfillIfNeeded: vi.fn(async () => [synthetic]),

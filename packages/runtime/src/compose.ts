@@ -25,7 +25,6 @@ import type { Secrets } from './config/secrets.js';
 
 export interface BuildChannelsDeps {
   readonly sessionStore: SessionStore;
-  readonly logger: Logger;
 }
 
 export interface BuildChannelsResult {
@@ -105,7 +104,7 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
     },
   });
 
-  const built = args.buildChannels ? await args.buildChannels({ sessionStore, logger }) : undefined;
+  const built = args.buildChannels ? await args.buildChannels({ sessionStore }) : undefined;
   const inboundChannels = built?.inboundChannels ?? args.inboundChannels ?? [];
   const outboundChannels = built?.outboundChannels ?? args.outboundChannels ?? new Map();
   const sessionPolicies = built?.sessionPolicies ?? args.sessionPolicies ?? new Map();
