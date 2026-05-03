@@ -100,7 +100,7 @@ migrate done — applied: 1, skipped: 0
 Verify the schema:
 
 ```bash
-docker compose exec postgres psql -U agentry -d agentry -c '\dt'
+docker compose exec -T postgres psql -U agentry -d agentry -c '\dt'
 # Should list: _agentry_migrations, knowledge_items, sessions, source_refs,
 # tenants, turns
 ```
@@ -173,7 +173,7 @@ Within a few seconds you should see a thread reply from the bot.
 ## 10. Verify the DB
 
 ```bash
-docker compose exec postgres psql -U agentry -d agentry <<'SQL'
+docker compose exec -T postgres psql -U agentry -d agentry <<'SQL'
 SELECT id, channel_kind, channel_native_ref, status
   FROM sessions
   ORDER BY started_at DESC
