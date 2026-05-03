@@ -54,6 +54,17 @@ function buildFake(): SessionStore {
       return session;
     },
 
+    async findByRef(
+      channelKind: ChannelKind,
+      channelNativeRef: ChannelNativeRef,
+      tenantId: TenantId,
+    ): Promise<Session | null> {
+      const key = `${tenantId}|${channelKind}|${channelNativeRef}`;
+      const existingId = sessionByKey.get(key);
+      if (existingId === undefined) return null;
+      return sessions.get(existingId) ?? null;
+    },
+
     async recordTurn(sessionId: SessionId, input: TurnInput): Promise<Turn> {
       turnCounter += 1;
       const turn: Turn = {
@@ -112,6 +123,11 @@ describe('SessionStore port', () => {
     const a = await store.findOrCreate('slack', 'slack:C1:1.0', 'default');
     const aAgain = await store.findOrCreate('slack', 'slack:C1:1.0', 'default');
     expect(aAgain.id).toBe(a.id);
+
+    const found = await store.findByRef('slack', 'slack:C1:1.0', 'default');
+    expect(found?.id).toBe(a.id);
+    const missing = await store.findByRef('slack', 'slack:nonexistent', 'default');
+    expect(missing).toBeNull();
 
     const b = await store.findOrCreate('slack', 'slack:C2:2.0', 'default');
     expect(b.id).not.toBe(a.id);

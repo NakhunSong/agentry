@@ -73,12 +73,25 @@ export class SlackHistoryBackfiller {
     tenant: TenantId,
     ref: ChannelNativeRef,
   ): Promise<readonly IncomingEvent[]> {
-    const session = await this.opts.sessionStore.findOrCreate(
+    // Hot-path short-circuit: if the session already exists AND is
+    // backfilled, skip the UPSERT and the Slack API call entirely. The
+    // read-only `findByRef` keeps the already-backfilled mention path off
+    // the per-mention findOrCreate roundtrip (#64).
+    const existing = await this.opts.sessionStore.findByRef(
       this.opts.sessionPolicy.channelKind,
       ref,
       tenant,
     );
-    if (session.metadata[SLACK_BACKFILLED_METADATA_KEY] === true) return [];
+    if (existing !== null && existing.metadata[SLACK_BACKFILLED_METADATA_KEY] === true) {
+      return [];
+    }
+
+    // Cold path (first ever touch, or partial backfill from a prior crash):
+    // findOrCreate is required to create the session row before we can
+    // setMetadata against it.
+    const session =
+      existing ??
+      (await this.opts.sessionStore.findOrCreate(this.opts.sessionPolicy.channelKind, ref, tenant));
 
     const threading = readThreading(liveEvent.threading);
     const result = await this.opts.webClient.conversations.replies({

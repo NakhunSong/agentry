@@ -69,19 +69,33 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 
 interface FakeSessionStore extends SessionStore {
   readonly findOrCreateMock: ReturnType<typeof vi.fn>;
+  readonly findByRefMock: ReturnType<typeof vi.fn>;
   readonly setMetadataMock: ReturnType<typeof vi.fn>;
 }
 
-function makeSessionStore(initial: Session = makeSession()): FakeSessionStore {
-  let current = initial;
-  const findOrCreateMock = vi.fn(async () => current);
+interface MakeSessionStoreOptions {
+  // null models the "no session exists yet" cold path; findByRef returns
+  // null and the backfiller falls back to findOrCreate.
+  readonly initial?: Session | null;
+}
+
+function makeSessionStore(options: MakeSessionStoreOptions = {}): FakeSessionStore {
+  let current: Session | null = options.initial === undefined ? makeSession() : options.initial;
+  const findByRefMock = vi.fn(async () => current);
+  const findOrCreateMock = vi.fn(async () => {
+    if (current === null) current = makeSession();
+    return current;
+  });
   const setMetadataMock = vi.fn(
     async (_id: SessionId, patch: Readonly<Record<string, unknown>>) => {
-      current = { ...current, metadata: { ...current.metadata, ...patch } };
+      if (current !== null) {
+        current = { ...current, metadata: { ...current.metadata, ...patch } };
+      }
     },
   );
   return {
     findOrCreate: findOrCreateMock as SessionStore['findOrCreate'],
+    findByRef: findByRefMock as SessionStore['findByRef'],
     setMetadata: setMetadataMock as SessionStore['setMetadata'],
     recordTurn: vi.fn(async (_id: SessionId, _t: TurnInput): Promise<Turn> => {
       throw new Error('not used');
@@ -90,6 +104,7 @@ function makeSessionStore(initial: Session = makeSession()): FakeSessionStore {
     updateStatus: vi.fn(async (_id: SessionId, _s: SessionStatus) => {}),
     listSessionsForDistillation: vi.fn(async (_c: DistillationCriteria) => []),
     findOrCreateMock,
+    findByRefMock,
     setMetadataMock,
   };
 }
@@ -123,10 +138,10 @@ const liveEvent: IncomingEvent = {
 };
 
 describe('SlackHistoryBackfiller', () => {
-  it('returns [] without calling Slack when session is already backfilled', async () => {
-    const store = makeSessionStore(
-      makeSession({ metadata: { [SLACK_BACKFILLED_METADATA_KEY]: true } }),
-    );
+  it('returns [] without calling Slack OR findOrCreate when session is already backfilled (#64)', async () => {
+    const store = makeSessionStore({
+      initial: makeSession({ metadata: { [SLACK_BACKFILLED_METADATA_KEY]: true } }),
+    });
     const repliesFn = vi.fn();
     const webClient = makeWebClient(repliesFn);
     const backfiller = new SlackHistoryBackfiller({
@@ -140,10 +155,48 @@ describe('SlackHistoryBackfiller', () => {
     expect(result).toEqual([]);
     expect(repliesFn).not.toHaveBeenCalled();
     expect(store.setMetadataMock).not.toHaveBeenCalled();
+    // The whole point of #64: the per-mention UPSERT is gone on the hot path.
+    expect(store.findOrCreateMock).not.toHaveBeenCalled();
+    expect(store.findByRefMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips findOrCreate when an existing-but-not-yet-backfilled session is returned by findByRef', async () => {
+    const store = makeSessionStore({
+      initial: makeSession({ metadata: {} }),
+    });
+    const backfiller = new SlackHistoryBackfiller({
+      webClient: makeWebClient(async () => ({ ok: true, messages: [] })),
+      sessionStore: store,
+      sessionPolicy: new StubSlackPolicy(),
+    });
+
+    await backfiller.backfillIfNeeded(liveEvent, 'default');
+
+    expect(store.findByRefMock).toHaveBeenCalledTimes(1);
+    // Existing session reused — no UPSERT needed.
+    expect(store.findOrCreateMock).not.toHaveBeenCalled();
+    // Backfill marker still gets persisted on the existing session id.
+    expect(store.setMetadataMock).toHaveBeenCalledWith('sess-1', {
+      [SLACK_BACKFILLED_METADATA_KEY]: true,
+    });
+  });
+
+  it('falls back to findOrCreate when no session exists yet (cold path, first ever touch)', async () => {
+    const store = makeSessionStore({ initial: null });
+    const backfiller = new SlackHistoryBackfiller({
+      webClient: makeWebClient(async () => ({ ok: true, messages: [] })),
+      sessionStore: store,
+      sessionPolicy: new StubSlackPolicy(),
+    });
+
+    await backfiller.backfillIfNeeded(liveEvent, 'default');
+
+    expect(store.findByRefMock).toHaveBeenCalledTimes(1);
+    expect(store.findOrCreateMock).toHaveBeenCalledTimes(1);
   });
 
   it('maps prior thread messages to synthetic IncomingEvents in chronological order', async () => {
-    const store = makeSessionStore();
+    const store = makeSessionStore({});
     const repliesFn = vi.fn(async () => ({
       ok: true,
       messages: [
@@ -182,7 +235,7 @@ describe('SlackHistoryBackfiller', () => {
   });
 
   it('excludes bot_id messages so bot replies are not recorded as user turns', async () => {
-    const store = makeSessionStore();
+    const store = makeSessionStore({});
     const repliesFn = vi.fn(async () => ({
       ok: true,
       messages: [
@@ -203,7 +256,7 @@ describe('SlackHistoryBackfiller', () => {
   });
 
   it('marks the session backfilled after a successful first run', async () => {
-    const store = makeSessionStore();
+    const store = makeSessionStore({});
     const backfiller = new SlackHistoryBackfiller({
       webClient: makeWebClient(async () => ({ ok: true, messages: [] })),
       sessionStore: store,
@@ -218,7 +271,7 @@ describe('SlackHistoryBackfiller', () => {
   });
 
   it('throws SlackHistoryBackfillError when conversations.replies returns ok: false', async () => {
-    const store = makeSessionStore();
+    const store = makeSessionStore({});
     const backfiller = new SlackHistoryBackfiller({
       webClient: makeWebClient(async () => ({ ok: false, error: 'channel_not_found' })),
       sessionStore: store,
@@ -232,7 +285,7 @@ describe('SlackHistoryBackfiller', () => {
   });
 
   it('collapses concurrent first-touch calls into a single Slack API request', async () => {
-    const store = makeSessionStore();
+    const store = makeSessionStore({});
     let resolve!: (value: ConversationsRepliesResult) => void;
     const inflight = new Promise<ConversationsRepliesResult>((r) => {
       resolve = r;
@@ -258,7 +311,7 @@ describe('SlackHistoryBackfiller', () => {
   });
 
   it('does not poison the lock when a backfill throws — next call retries', async () => {
-    const store = makeSessionStore();
+    const store = makeSessionStore({});
     let calls = 0;
     const repliesFn = vi.fn(async () => {
       calls += 1;

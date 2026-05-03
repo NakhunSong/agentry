@@ -82,6 +82,41 @@ describe.skipIf(!integration)('PgvectorSessionStore', () => {
     expect(last3.map((t) => t.contentText)).toEqual(['c', 'd', 'e']);
   });
 
+  it('findByRef returns null when no row matches and is read-only (no UPSERT side effect)', async () => {
+    const store = new PgvectorSessionStore(pool);
+    // Read against a never-touched ref.
+    const missing = await store.findByRef('slack', 'slack:C-findByRef-ghost:1.0', 'default');
+    expect(missing).toBeNull();
+
+    // The lookup must not have created a row — a subsequent findOrCreate
+    // is the FIRST creation and gets fresh started_at/last_active_at.
+    const created = await store.findOrCreate('slack', 'slack:C-findByRef-ghost:1.0', 'default');
+    expect(created.startedAt.getTime()).toBe(created.lastActiveAt.getTime());
+  });
+
+  it('findByRef returns the existing session without touching last_active_at', async () => {
+    const store = new PgvectorSessionStore(pool);
+    const created = await store.findOrCreate('slack', 'slack:C-findByRef-hit:1.0', 'default');
+
+    await new Promise((r) => setTimeout(r, 50));
+    const found = await store.findByRef('slack', 'slack:C-findByRef-hit:1.0', 'default');
+    expect(found).not.toBeNull();
+    expect(found?.id).toBe(created.id);
+    // findByRef is a SELECT — last_active_at must NOT have moved forward
+    // (which is what distinguishes it from findOrCreate's UPSERT touch).
+    expect(found?.lastActiveAt.getTime()).toBe(created.lastActiveAt.getTime());
+  });
+
+  it('findByRef isolates by tenant', async () => {
+    const store = new PgvectorSessionStore(pool);
+    await pool.query(
+      "INSERT INTO tenants (id, display_name) VALUES ('tenant-a', 'A'), ('tenant-b', 'B') ON CONFLICT (id) DO NOTHING",
+    );
+    await store.findOrCreate('slack', 'slack:C-findByRef-tenant:1.0', 'tenant-a');
+    const otherTenant = await store.findByRef('slack', 'slack:C-findByRef-tenant:1.0', 'tenant-b');
+    expect(otherTenant).toBeNull();
+  });
+
   it('updateStatus transitions session.status', async () => {
     const store = new PgvectorSessionStore(pool);
     const session = await store.findOrCreate('slack', 'slack:C-status:1.0', 'default');
