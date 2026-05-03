@@ -84,10 +84,13 @@ export class SlackHistoryBackfiller {
     const result = await this.opts.webClient.conversations.replies({
       channel: threading.channel,
       ts: threading.thread_ts,
-      // Slack max page size; deep threads are truncated rather than
-      // paginated. Slack's 3-second ack budget makes multi-page fetch
-      // risky on the inbound hot path; revisit if real threads exceed the
-      // cap.
+      // Slack returns replies oldest-first, one page at a time. With
+      // limit: 1000 (Slack's max), a thread of >1000 messages truncates
+      // the MOST RECENT tail — i.e. the part the agent most needs for
+      // context. Slack's 3-second ack budget rules out multi-page fetch
+      // on the inbound hot path. Followup work: invert pagination (latest
+      // first) and/or move backfill off the ack path if real threads
+      // start hitting the cap.
       limit: 1000,
     });
     if (!result.ok || !result.messages) {
