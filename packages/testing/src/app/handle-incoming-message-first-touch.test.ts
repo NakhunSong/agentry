@@ -2,6 +2,7 @@ import type {
   ChannelKind,
   HandleIncomingMessageDeps,
   IncomingEvent,
+  Logger,
   OutboundChannel,
   Session,
   SessionFirstTouch,
@@ -11,7 +12,7 @@ import type {
   TenantId,
 } from '@agentry/core';
 import { makeHandleIncomingMessage, SYNTHETIC_EVENT_METADATA_KEY } from '@agentry/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RecordingAgentRunner } from '../agent-runner/recording-agent-runner.js';
 import { RecordingOutboundChannel } from '../channels/recording-outbound-channel.js';
 import { InMemoryJobRunner } from '../job-runner/in-memory-job-runner.js';
@@ -173,12 +174,18 @@ describe('makeHandleIncomingMessage — sessionFirstTouch integration', () => {
     ]);
   });
 
-  it('proceeds with live event when onFirstTouch throws (failure is swallowed)', async () => {
+  it('proceeds with live event when onFirstTouch throws (failure is swallowed and warn-logged)', async () => {
     // Inline rewire — not worth threading a broken-impl override through buildHarness for one case.
     const broken: SessionFirstTouch = {
       onFirstTouch: async () => {
         throw new Error('backfill blew up');
       },
+    };
+    const warnSpy = vi.fn();
+    const recordingLogger: Logger = {
+      ...silentLogger,
+      warn: warnSpy,
+      child: () => recordingLogger,
     };
     const sessionStore = new InMemorySessionStore();
     const jobRunner = new InMemoryJobRunner();
@@ -194,7 +201,7 @@ describe('makeHandleIncomingMessage — sessionFirstTouch integration', () => {
       sessionFirstTouches: new Map([['test', broken]]),
       resolveTenant: () => 'tenant-1',
       agentWorkdir: '/tmp/agent-workdir',
-      logger: silentLogger,
+      logger: recordingLogger,
     });
 
     await handle(makeEvent('live-1', 'live mention'));
@@ -204,5 +211,10 @@ describe('makeHandleIncomingMessage — sessionFirstTouch integration', () => {
     const turns = await sessionStore.getRecentTurns(session.id, 100);
     expect(turns.map((t) => t.contentText)).toEqual(['live mention', 'reply']);
     expect(outbound.replies).toHaveLength(1);
+    // Regression guard: removing the catch's log.warn would silently
+    // hide first-touch failures.
+    expect(warnSpy).toHaveBeenCalledOnce();
+    const [calledWith] = warnSpy.mock.calls;
+    expect(calledWith?.[1]).toMatch(/first-touch failed/);
   });
 });
