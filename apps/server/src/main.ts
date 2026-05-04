@@ -1,11 +1,12 @@
 import {
+  SLACK_CHANNEL_KIND,
   SlackHistoryBackfiller,
   SlackInboundChannel,
   SlackOutboundChannel,
   SlackSessionPolicy,
   slackMcpServerConfig,
 } from '@agentry/adapter-channel-slack';
-import type { ChannelKind, OutboundChannel, SessionPolicy } from '@agentry/core';
+import type { ChannelKind, OutboundChannel, SessionFirstTouch, SessionPolicy } from '@agentry/core';
 import { AgentryConfigSchema, compose, loadSecrets } from '@agentry/runtime';
 import { serve } from '@hono/node-server';
 import { WebClient } from '@slack/web-api';
@@ -41,7 +42,7 @@ async function main(): Promise<void> {
   const handles = await compose({
     config,
     secrets,
-    buildChannels: ({ sessionStore }) => {
+    buildChannels: ({ sessionStore, logger }) => {
       // Single shared WebClient: SlackOutboundChannel posts replies; the
       // backfiller fetches conversations.replies. Two clients would just
       // duplicate connection pools.
@@ -55,17 +56,20 @@ async function main(): Promise<void> {
         webClient: slackClient,
         sessionStore,
         sessionPolicy: policy,
+        logger,
       });
       const inbound = new SlackInboundChannel({
         botToken: secrets.SLACK_BOT_TOKEN,
         signingSecret: secrets.SLACK_SIGNING_SECRET,
         port: slackPort,
-        backfiller,
       });
       return {
         inboundChannels: [inbound],
         outboundChannels: new Map<ChannelKind, OutboundChannel>([[policy.channelKind, outbound]]),
         sessionPolicies: new Map<ChannelKind, SessionPolicy>([[policy.channelKind, policy]]),
+        sessionFirstTouches: new Map<ChannelKind, SessionFirstTouch>([
+          [SLACK_CHANNEL_KIND, backfiller],
+        ]),
         mcpServers: [slackMcpServerConfig({ botToken: secrets.SLACK_BOT_TOKEN })],
       };
     },

@@ -17,18 +17,7 @@ import { InMemoryKnowledgeStore } from '../knowledge-store/in-memory-knowledge-s
 import { silentLogger } from '../logger/silent-logger.js';
 import { StaticSessionPolicy } from '../session-policy/static-session-policy.js';
 import { InMemorySessionStore } from '../session-store/in-memory-session-store.js';
-
-interface Deferred<T> {
-  readonly promise: Promise<T>;
-  resolve: (value: T) => void;
-}
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
+import { deferred } from '../test-utils/deferred.js';
 
 function makeEvent(overrides: Partial<IncomingEvent> = {}): IncomingEvent {
   return {
