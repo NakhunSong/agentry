@@ -20,6 +20,17 @@ export interface SessionStore {
     tenantId: TenantId,
   ): Promise<Session>;
 
+  // Read-only counterpart of findOrCreate. Returns null when no session
+  // exists for the (kind, ref, tenant) tuple. Callers that only need to
+  // CHECK existence or read metadata (e.g., session-bootstrap hooks
+  // deciding whether their work is already done) should use this instead
+  // of findOrCreate to avoid the UPSERT roundtrip on the hot path.
+  findByRef(
+    channelKind: ChannelKind,
+    channelNativeRef: ChannelNativeRef,
+    tenantId: TenantId,
+  ): Promise<Session | null>;
+
   recordTurn(sessionId: SessionId, turn: TurnInput): Promise<Turn>;
 
   getRecentTurns(sessionId: SessionId, limit: number): Promise<readonly Turn[]>;

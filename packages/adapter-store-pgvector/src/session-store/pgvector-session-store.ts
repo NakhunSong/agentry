@@ -97,6 +97,23 @@ export class PgvectorSessionStore implements SessionStore {
     return mapSession(row);
   }
 
+  async findByRef(
+    channelKind: ChannelKind,
+    channelNativeRef: ChannelNativeRef,
+    tenantId: TenantId,
+  ): Promise<Session | null> {
+    const result = await this.pool.query<SessionRow>(
+      `SELECT * FROM sessions
+       WHERE tenant_id = $1
+         AND channel_kind = $2
+         AND channel_native_ref = $3
+       LIMIT 1`,
+      [tenantId, channelKind, channelNativeRef],
+    );
+    const row = result.rows[0];
+    return row ? mapSession(row) : null;
+  }
+
   async recordTurn(sessionId: SessionId, turn: TurnInput): Promise<Turn> {
     const result = await this.pool.query<TurnRow>(
       `INSERT INTO turns (

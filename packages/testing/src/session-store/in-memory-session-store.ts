@@ -55,6 +55,17 @@ export class InMemorySessionStore implements SessionStore {
     return created;
   }
 
+  async findByRef(
+    channelKind: ChannelKind,
+    channelNativeRef: ChannelNativeRef,
+    tenantId: TenantId,
+  ): Promise<Session | null> {
+    const key = this.indexKey(channelKind, channelNativeRef, tenantId);
+    const existingId = this.nativeIndex.get(key);
+    if (existingId === undefined) return null;
+    return this.sessions.get(existingId) ?? null;
+  }
+
   async recordTurn(sessionId: SessionId, turn: TurnInput): Promise<Turn> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
