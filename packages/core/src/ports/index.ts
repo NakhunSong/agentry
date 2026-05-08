@@ -14,5 +14,9 @@ export type {
 export type { KnowledgeStore } from './knowledge-store.js';
 export type { Logger } from './logger.js';
 export type { OutboundChannel } from './outbound-channel.js';
+export type {
+  SessionFirstTouch,
+  SessionFirstTouchInput,
+} from './session-first-touch.js';
 export type { SessionPolicy } from './session-policy.js';
 export type { SessionStore } from './session-store.js';

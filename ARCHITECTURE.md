@@ -458,6 +458,49 @@ Switch from in-memory if **any one** of the following holds:
 If none apply (single VPS, single process, light traffic, Slack retry tolerance
 acceptable), in-memory remains the right choice. Implementation tracked in #28.
 
+### 4.9 SessionFirstTouch — issue #63
+
+```ts
+interface SessionFirstTouchInput {
+  readonly session: Session;
+  readonly event: IncomingEvent;
+}
+
+interface SessionFirstTouch {
+  /**
+   * Channel-agnostic session-bootstrap hook. Invoked by the use case
+   * INSIDE the JobRunner queue (off the inbound ack path) on each
+   * session's first contact. Returns synthetic IncomingEvents the use
+   * case records as user turns BEFORE the live event's agent run.
+   *
+   * Implementations own their "already done" flag (typically via
+   * `session.metadata`) and reconcile multi-process drift via
+   * `SessionStore.findByRef` — the closure-captured `session` is per-
+   * worker stale.
+   *
+   * Failure semantics: if the impl throws, the use case logs and still
+   * processes the live event. Synthetic delivery is best-effort.
+   */
+  onFirstTouch(input: SessionFirstTouchInput): Promise<readonly IncomingEvent[]>;
+}
+```
+
+**Why this is a port, not a Slack helper**: Slack's "fetch prior thread
+messages on first mention" was previously hard-coded into
+`SlackInboundChannel`. That blocked the 3-second ack budget on a Slack
+API call AND assumed the ack path owned session-bootstrap concerns.
+Promoting it to a core port lets Discord / CLI / HTTP adapters plug in
+the same way (or opt out by registering nothing). Concurrency
+consolidates to a single primitive (JobRunner per-key FIFO) — the
+adapter no longer carries its own in-flight Map.
+
+**Default**: none. Channels register an impl in `BuildChannelsResult.sessionFirstTouches`.
+
+**MVP impl**: `SlackHistoryBackfiller` (in `adapter-channel-slack`)
+— closure-snapshot check on `session.metadata.slackBackfilled`,
+`findByRef` race re-check, then `conversations.replies(limit:1000)` on
+the cold path.
+
 ---
 
 ## 5. Use Cases
@@ -471,21 +514,32 @@ business logic lives.
 IncomingEvent
    │
    ▼
-SessionStore.findOrCreate ──► Session
+SessionStore.findOrCreate ──► Session         ◄── only DB roundtrip on ack path
    │
-   ▼ (if Slack synthetic-history needed: emit prior IncomingEvents first)
-JobRunner.enqueue(key=sessionId, job=processOneTurn)
+   ▼
+JobRunner.enqueue(key=sessionId, job=…)       ◄── ack returns here
    │
    ▼  (per-key serial)
-[processOneTurn]
+[queued job]
    │
-   ├── SessionStore.recordTurn(user)
-   ├── KnowledgeStore.retrieve(query=user.text, tenantId)
-   ├── AgentRunner.run({ prompt, context.retrievedKnowledge })
-   │     └── consume AgentEvents
-   ├── SessionStore.recordTurn(agent, metadata.usage)
-   └── OutboundChannel.reply(target, response)
+   ├── SessionFirstTouch.onFirstTouch?(...) → synthetics  (off ack path)
+   │     └── for each synthetic: processOneTurn(synth)
+   │
+   └── processOneTurn(live event)
+         │
+         ├── SessionStore.recordTurn(user)
+         ├── KnowledgeStore.retrieve(query=user.text, tenantId)
+         ├── AgentRunner.run({ prompt, context.retrievedKnowledge })
+         │     └── consume AgentEvents
+         ├── SessionStore.recordTurn(agent, metadata.usage)
+         └── OutboundChannel.reply(target, response)
 ```
+
+**Boundary**: `findOrCreate` + `enqueue` are synchronous from the
+inbound channel's perspective (Slack's 3s ack budget). Everything else
+— including `SessionFirstTouch` — runs inside the queued job. First-
+touch failure is swallowed (logged) so a transient Slack API error
+during backfill cannot drop the live mention.
 
 ### 5.2 DistillSession (Phase 2 implementation)
 

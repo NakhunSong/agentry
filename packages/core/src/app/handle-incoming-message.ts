@@ -7,6 +7,7 @@ import type { JobRunner } from '../ports/job-runner.js';
 import type { KnowledgeStore } from '../ports/knowledge-store.js';
 import type { Logger } from '../ports/logger.js';
 import type { OutboundChannel } from '../ports/outbound-channel.js';
+import type { SessionFirstTouch } from '../ports/session-first-touch.js';
 import type { SessionPolicy } from '../ports/session-policy.js';
 import type { SessionStore } from '../ports/session-store.js';
 
@@ -17,6 +18,10 @@ export interface HandleIncomingMessageDeps {
   readonly jobRunner: JobRunner;
   readonly sessionPolicies: ReadonlyMap<ChannelKind, SessionPolicy>;
   readonly outboundChannels: ReadonlyMap<ChannelKind, OutboundChannel>;
+  // Per-channel session-bootstrap hook. When set for `event.channelKind`,
+  // it runs INSIDE the JobRunner queue (off the inbound ack path) and may
+  // return synthetic events recorded as user turns before the live event.
+  readonly sessionFirstTouches?: ReadonlyMap<ChannelKind, SessionFirstTouch>;
   readonly resolveTenant: (event: IncomingEvent) => TenantId;
   readonly agentWorkdir: string;
   readonly logger: Logger;
@@ -65,10 +70,38 @@ export function makeHandleIncomingMessage(deps: HandleIncomingMessageDeps): Hand
     const log = tenantLog.child({ sessionId: session.id });
     log.info({}, 'session resolved; enqueueing turn');
 
+    const firstTouch = deps.sessionFirstTouches?.get(event.channelKind);
+
     await deps.jobRunner.enqueue({
       key: session.id,
-      job: () =>
-        processOneTurn({ event, sessionId: session.id, tenantId, log, deps, topK, policy }),
+      // First-touch + live processing run inside the per-key FIFO chain
+      // (see InMemoryJobRunner). Mention 2 cannot start until mention 1
+      // resolves, so a single-process deployment never double-fetches
+      // history. Multi-process correctness relies on the impl re-reading
+      // session metadata via SessionStore.findByRef.
+      job: async () => {
+        if (firstTouch !== undefined) {
+          let synthetics: readonly IncomingEvent[] = [];
+          try {
+            synthetics = await firstTouch.onFirstTouch({ session, event });
+          } catch (err) {
+            // Backfill failure must not drop the live event.
+            log.warn({ err }, 'session first-touch failed; proceeding with live event only');
+          }
+          for (const synth of synthetics) {
+            await processOneTurn({
+              event: synth,
+              sessionId: session.id,
+              tenantId,
+              log,
+              deps,
+              topK,
+              policy,
+            });
+          }
+        }
+        await processOneTurn({ event, sessionId: session.id, tenantId, log, deps, topK, policy });
+      },
     });
   };
 }

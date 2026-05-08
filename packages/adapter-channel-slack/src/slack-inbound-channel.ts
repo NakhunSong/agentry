@@ -1,11 +1,10 @@
-import type { ChannelKind, InboundChannel, IncomingEvent, Logger, TenantId } from '@agentry/core';
+import type { ChannelKind, InboundChannel, IncomingEvent, Logger } from '@agentry/core';
 import { App } from '@slack/bolt';
 import { SLACK_CHANNEL_KIND } from './slack-channel-kinds.js';
 import {
   mapAppMentionToIncomingEvent,
   type SlackAppMentionEnvelope,
 } from './slack-event-mapping.js';
-import type { SlackHistoryBackfiller } from './slack-history-backfiller.js';
 import { verifySlackScopes } from './slack-scope-verifier.js';
 
 // Channel mention + thread backfill + user/channel lookup scopes. Reading
@@ -22,8 +21,6 @@ export const SLACK_REQUIRED_SCOPES: readonly string[] = [
   'users:read',
 ];
 
-const DEFAULT_TENANT: TenantId = 'default';
-
 export interface SlackInboundChannelOptions {
   readonly botToken: string;
   readonly signingSecret: string;
@@ -34,11 +31,6 @@ export interface SlackInboundChannelOptions {
   readonly app?: App;
   readonly fetch?: typeof globalThis.fetch;
   readonly requiredScopes?: readonly string[];
-  // Optional thread-history backfill: when set, the channel calls
-  // backfillIfNeeded on first contact and forwards synthetic events
-  // (history-only) to the handler before the live event.
-  readonly backfiller?: SlackHistoryBackfiller;
-  readonly resolveTenant?: (event: IncomingEvent) => TenantId;
 }
 
 export class SlackInboundChannel implements InboundChannel {
@@ -85,21 +77,9 @@ export class SlackInboundChannel implements InboundChannel {
           team_id: typeof b.team_id === 'string' ? b.team_id : '',
         };
         const live = mapAppMentionToIncomingEvent(envelope);
-        const tenant = (this.opts.resolveTenant ?? (() => DEFAULT_TENANT))(live);
-
-        // Inner try/catch around backfill ONLY: a backfill failure must not
-        // drop the live event. Without this, a transient Slack API error
-        // (rate limit, network blip) would silently drop the user's mention.
-        let synthetics: readonly IncomingEvent[] = [];
-        if (this.opts.backfiller) {
-          try {
-            synthetics = await this.opts.backfiller.backfillIfNeeded(live, tenant);
-          } catch (err) {
-            log.warn({ err }, 'slack history backfill failed; proceeding without synthetics');
-          }
-        }
-
-        for (const synth of synthetics) await handler(synth);
+        // Thread-history backfill moved off the ack path: the use case
+        // invokes SessionFirstTouch inside the JobRunner queue. Inbound
+        // ack only needs to dispatch the live event.
         await handler(live);
       } catch (err) {
         // Log and swallow: failing here would cause Bolt to leave the request

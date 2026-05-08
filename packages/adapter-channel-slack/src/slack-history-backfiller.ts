@@ -1,10 +1,11 @@
 import {
-  type ChannelNativeRef,
   type IncomingEvent,
+  type Logger,
+  type SessionFirstTouch,
+  type SessionFirstTouchInput,
   type SessionPolicy,
   type SessionStore,
   SYNTHETIC_EVENT_METADATA_KEY,
-  type TenantId,
   type ThreadingMetadata,
 } from '@agentry/core';
 import type { WebClient } from '@slack/web-api';
@@ -29,6 +30,7 @@ export interface SlackHistoryBackfillerOptions {
   readonly webClient: WebClient;
   readonly sessionStore: SessionStore;
   readonly sessionPolicy: SessionPolicy;
+  readonly logger?: Logger;
 }
 
 export class SlackHistoryBackfillError extends Error {
@@ -38,72 +40,68 @@ export class SlackHistoryBackfillError extends Error {
   }
 }
 
-export class SlackHistoryBackfiller {
+const noopLogger: Logger = {
+  trace: () => {},
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  fatal: () => {},
+  child: () => noopLogger,
+};
+
+// Channel-agnostic core hook implemented for Slack: backfills prior thread
+// messages as synthetic IncomingEvents the use case records as user turns
+// before the live mention. Single-process dedup comes from the JobRunner
+// per-key FIFO contract; multi-process race is re-confirmed via
+// SessionStore.findByRef before any work runs.
+export class SlackHistoryBackfiller implements SessionFirstTouch {
   private readonly opts: SlackHistoryBackfillerOptions;
-  // In-memory promise lock keyed by nativeRef collapses concurrent
-  // first-touch events for the same session into one Slack API call. The
-  // persistent `slackBackfilled` metadata flag covers the cross-restart
-  // case; this map covers the single-process race window. Multi-instance
-  // deployments still have a narrow same-session-different-process race
-  // (accepted for the MVP).
-  private readonly inFlight = new Map<ChannelNativeRef, Promise<readonly IncomingEvent[]>>();
+  private readonly log: Logger;
 
   constructor(opts: SlackHistoryBackfillerOptions) {
     this.opts = opts;
+    this.log = opts.logger ?? noopLogger;
   }
 
-  async backfillIfNeeded(
-    liveEvent: IncomingEvent,
-    tenant: TenantId,
-  ): Promise<readonly IncomingEvent[]> {
-    const ref = this.opts.sessionPolicy.computeNativeRef(liveEvent);
-    const existing = this.inFlight.get(ref);
-    if (existing) return existing;
-    const promise = this.runBackfill(liveEvent, tenant, ref);
-    this.inFlight.set(ref, promise);
-    try {
-      return await promise;
-    } finally {
-      this.inFlight.delete(ref);
-    }
-  }
+  async onFirstTouch(input: SessionFirstTouchInput): Promise<readonly IncomingEvent[]> {
+    const { session, event } = input;
 
-  private async runBackfill(
-    liveEvent: IncomingEvent,
-    tenant: TenantId,
-    ref: ChannelNativeRef,
-  ): Promise<readonly IncomingEvent[]> {
-    // Hot-path short-circuit: if the session already exists AND is
-    // backfilled, skip the UPSERT and the Slack API call entirely. The
-    // read-only `findByRef` keeps the already-backfilled mention path off
-    // the per-mention findOrCreate roundtrip (#64).
-    const existing = await this.opts.sessionStore.findByRef(
-      this.opts.sessionPolicy.channelKind,
-      ref,
-      tenant,
-    );
-    if (existing !== null && existing.metadata[SLACK_BACKFILLED_METADATA_KEY] === true) {
+    // Closure snapshot wins the cheap path: when the use case captured a
+    // session that was already marked backfilled, no Slack roundtrip
+    // needed.
+    if (session.metadata[SLACK_BACKFILLED_METADATA_KEY] === true) {
+      this.log.info({ sessionId: session.id }, 'slack first-touch: skipped (already backfilled)');
       return [];
     }
 
-    // Cold path (first ever touch, or partial backfill from a prior crash):
-    // findOrCreate is required to create the session row before we can
-    // setMetadata against it.
-    const session =
-      existing ??
-      (await this.opts.sessionStore.findOrCreate(this.opts.sessionPolicy.channelKind, ref, tenant));
+    // Defense-in-depth for the per-key-FIFO + multi-process race: the
+    // captured session is from BEFORE enqueue, so a sibling job (this
+    // process or another) that finished backfilling between findOrCreate
+    // and now is invisible to the closure. Re-read fresh.
+    const ref = this.opts.sessionPolicy.computeNativeRef(event);
+    const fresh = await this.opts.sessionStore.findByRef(
+      this.opts.sessionPolicy.channelKind,
+      ref,
+      session.tenantId,
+    );
+    if (fresh !== null && fresh.metadata[SLACK_BACKFILLED_METADATA_KEY] === true) {
+      this.log.info(
+        { sessionId: session.id },
+        'slack first-touch: skipped (already backfilled by sibling)',
+      );
+      return [];
+    }
 
-    const threading = readThreading(liveEvent.threading);
+    const threading = readThreading(event.threading);
     const result = await this.opts.webClient.conversations.replies({
       channel: threading.channel,
       ts: threading.thread_ts,
       // Slack returns replies oldest-first, one page at a time. With
       // limit: 1000 (Slack's max), a thread of >1000 messages truncates
       // the MOST RECENT tail — i.e. the part the agent most needs for
-      // context. Slack's 3-second ack budget rules out multi-page fetch
-      // on the inbound hot path. Followup work: invert pagination (latest
-      // first) and/or move backfill off the ack path if real threads
-      // start hitting the cap.
+      // context. Followup work: invert pagination (latest first) and/or
+      // bulk-recordTurn for very long threads.
       limit: 1000,
     });
     if (!result.ok || !result.messages) {
@@ -129,6 +127,10 @@ export class SlackHistoryBackfiller {
     await this.opts.sessionStore.setMetadata(session.id, {
       [SLACK_BACKFILLED_METADATA_KEY]: true,
     });
+    this.log.info(
+      { sessionId: session.id, synthetics: synthetics.length },
+      'slack first-touch: backfilled N messages from conversations.replies',
+    );
     return synthetics;
   }
 }

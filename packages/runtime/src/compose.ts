@@ -15,6 +15,7 @@ import type {
   Logger,
   McpServerConfig,
   OutboundChannel,
+  SessionFirstTouch,
   SessionPolicy,
   SessionStore,
   TenantId,
@@ -26,12 +27,16 @@ import type { Secrets } from './config/secrets.js';
 
 export interface BuildChannelsDeps {
   readonly sessionStore: SessionStore;
+  readonly logger: Logger;
 }
 
 export interface BuildChannelsResult {
   readonly inboundChannels?: readonly InboundChannel[];
   readonly outboundChannels?: ReadonlyMap<ChannelKind, OutboundChannel>;
   readonly sessionPolicies?: ReadonlyMap<ChannelKind, SessionPolicy>;
+  // Per-channel session-bootstrap hooks. Run inside the JobRunner queue
+  // (off the inbound ack path) on each session's first touch.
+  readonly sessionFirstTouches?: ReadonlyMap<ChannelKind, SessionFirstTouch>;
   // Per ARCHITECTURE.md §11.1 — channel-adapter MCP servers the runtime
   // forwards to the agent runner.
   readonly mcpServers?: readonly McpServerConfig[];
@@ -104,10 +109,11 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
     },
   });
 
-  const built = args.buildChannels ? await args.buildChannels({ sessionStore }) : undefined;
+  const built = args.buildChannels ? await args.buildChannels({ sessionStore, logger }) : undefined;
   const inboundChannels = built?.inboundChannels ?? args.inboundChannels ?? [];
   const outboundChannels = built?.outboundChannels ?? args.outboundChannels ?? new Map();
   const sessionPolicies = built?.sessionPolicies ?? args.sessionPolicies ?? new Map();
+  const sessionFirstTouches = built?.sessionFirstTouches;
   const mcpServers = built?.mcpServers ?? [];
 
   const agentRunner = new ClaudeCliAgentRunner({
@@ -122,6 +128,7 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
     jobRunner,
     sessionPolicies,
     outboundChannels,
+    ...(sessionFirstTouches !== undefined ? { sessionFirstTouches } : {}),
     resolveTenant: args.resolveTenant ?? (() => DEFAULT_TENANT),
     agentWorkdir: config.agentWorkdir,
     logger,
