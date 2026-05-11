@@ -53,21 +53,53 @@ const secrets = loadSecrets(env);
 Adapters consume `secrets` through normal property access — they don't know
 or care where the values originated.
 
-### Adapter-specific secrets *(open question)*
+### Adapter-specific secrets
 
-The current `SecretsSchema` is centralized in `packages/runtime`. As more
-adapters land, each will want its own keys (e.g., a Discord adapter adding
-`DISCORD_BOT_TOKEN`). The extension contract is not yet decided:
+The pattern that emerged after the Slack + Claude CLI + Voyage + pgvector
+adapters all shipped: **`SecretsSchema` stays centralized in `runtime`,
+adapters never import `Secrets`**. The composition root reads each value
+from the schema and passes plain strings into adapter constructors.
 
-- **Option A** — extend the central schema in `runtime` for every adapter.
-  Simple, but `runtime` accretes adapter-specific fields.
-- **Option B** — each adapter exports its own `loadXxxSecrets()`.
-  Keeps boundaries clean, but the composition root juggles N loaders.
-- **Option C** — adapters export schema fragments; `runtime` provides a
-  builder that merges them at composition time.
+```ts
+// packages/runtime/src/config/secrets.ts — single source of truth
+export const SecretsSchema = z.object({
+  SLACK_BOT_TOKEN: z.string().startsWith('xoxb-', 'must start with "xoxb-"'),
+  SLACK_SIGNING_SECRET: z.string().min(1, 'must not be empty'),
+  POSTGRES_URL: z.url(),
+  VOYAGE_API_KEY: z.string().min(1, 'must not be empty'),
+});
 
-This will be settled when the second adapter (issue #18, Slack) lands.
-Until then, treat `SecretsSchema` as the single source of truth.
+// apps/server/src/main.ts — composition root maps env → adapter args
+const secrets = loadSecrets();
+const slackClient = new WebClient(secrets.SLACK_BOT_TOKEN);
+const inbound = new SlackInboundChannel({
+  botToken: secrets.SLACK_BOT_TOKEN,
+  signingSecret: secrets.SLACK_SIGNING_SECRET,
+  port: slackPort,
+});
+```
+
+The benefit beyond schema simplicity: **adapters stay testable without
+env**. `SlackInboundChannel`'s constructor takes a plain `botToken` string
+— unit tests pass `'xoxb-test'`, no `process.env` stubbing.
+
+**To add a new adapter that needs a secret** (e.g., a Discord adapter):
+
+1. Extend `SecretsSchema` with the new key (with a validator) and update
+   `.env.example`.
+2. The adapter constructor accepts the value as a plain option — it does
+   NOT import `Secrets` or `loadSecrets`.
+3. Wire the value at the composition root:
+   ```ts
+   const inbound = new DiscordInboundChannel({
+     botToken: secrets.DISCORD_BOT_TOKEN,
+   });
+   ```
+
+If the centralized schema gets large enough that contributors fight over
+it (≥ 8–10 adapters in active use), revisit by splitting into per-adapter
+schema fragments merged at composition time. Until then, the central
+schema keeps things obvious — one place to find every required key.
 
 ## Configuration (`agentry.config.ts`)
 
