@@ -33,22 +33,14 @@ describe('InMemoryJobRunner', () => {
     const gateA = deferred<void>();
     const gateB = deferred<void>();
 
-    await runner.enqueue({
-      key: 'session-1',
-      job: async () => {
-        order.push('a:start');
-        await gateA.promise;
-        order.push('a:end');
-      },
+    const queue = runner.register<{ id: string; gate: Deferred<void> }>('q', async (payload) => {
+      order.push(`${payload.id}:start`);
+      await payload.gate.promise;
+      order.push(`${payload.id}:end`);
     });
-    await runner.enqueue({
-      key: 'session-1',
-      job: async () => {
-        order.push('b:start');
-        await gateB.promise;
-        order.push('b:end');
-      },
-    });
+
+    await queue.enqueue({ key: 'session-1', payload: { id: 'a', gate: gateA } });
+    await queue.enqueue({ key: 'session-1', payload: { id: 'b', gate: gateB } });
 
     await settle();
     expect(order).toEqual(['a:start']);
@@ -68,22 +60,14 @@ describe('InMemoryJobRunner', () => {
     const gateA = deferred<void>();
     const gateB = deferred<void>();
 
-    await runner.enqueue({
-      key: 'session-1',
-      job: async () => {
-        order.push('a:start');
-        await gateA.promise;
-        order.push('a:end');
-      },
+    const queue = runner.register<{ id: string; gate: Deferred<void> }>('q', async (payload) => {
+      order.push(`${payload.id}:start`);
+      await payload.gate.promise;
+      order.push(`${payload.id}:end`);
     });
-    await runner.enqueue({
-      key: 'session-2',
-      job: async () => {
-        order.push('b:start');
-        await gateB.promise;
-        order.push('b:end');
-      },
-    });
+
+    await queue.enqueue({ key: 'session-1', payload: { id: 'a', gate: gateA } });
+    await queue.enqueue({ key: 'session-2', payload: { id: 'b', gate: gateB } });
 
     await settle();
     // Both started — different keys do not block each other.
@@ -103,18 +87,13 @@ describe('InMemoryJobRunner', () => {
     const runner = new InMemoryJobRunner({ onError });
     const order: string[] = [];
 
-    await runner.enqueue({
-      key: 'k',
-      job: async () => {
-        throw new Error('boom');
-      },
+    const queue = runner.register<{ throws: boolean }>('q', async (payload) => {
+      if (payload.throws) throw new Error('boom');
+      order.push('after-error');
     });
-    await runner.enqueue({
-      key: 'k',
-      job: async () => {
-        order.push('after-error');
-      },
-    });
+
+    await queue.enqueue({ key: 'k', payload: { throws: true } });
+    await queue.enqueue({ key: 'k', payload: { throws: false } });
 
     await runner.drain();
     expect(order).toEqual(['after-error']);
@@ -133,18 +112,13 @@ describe('InMemoryJobRunner', () => {
     });
     const order: string[] = [];
 
-    await runner.enqueue({
-      key: 'k',
-      job: async () => {
-        throw new Error('boom');
-      },
+    const queue = runner.register<{ throws: boolean }>('q', async (payload) => {
+      if (payload.throws) throw new Error('boom');
+      order.push('after');
     });
-    await runner.enqueue({
-      key: 'k',
-      job: async () => {
-        order.push('after');
-      },
-    });
+
+    await queue.enqueue({ key: 'k', payload: { throws: true } });
+    await queue.enqueue({ key: 'k', payload: { throws: false } });
 
     await runner.drain();
     expect(order).toEqual(['after']);
@@ -156,14 +130,13 @@ describe('InMemoryJobRunner', () => {
     let started = false;
     let finished = false;
 
-    const enqueuePromise = runner.enqueue({
-      key: 'k',
-      job: async () => {
-        started = true;
-        await gate.promise;
-        finished = true;
-      },
+    const queue = runner.register<null>('q', async () => {
+      started = true;
+      await gate.promise;
+      finished = true;
     });
+
+    const enqueuePromise = queue.enqueue({ key: 'k', payload: null });
 
     await enqueuePromise;
     // The job may have started its first microtask but cannot have finished.
@@ -185,20 +158,14 @@ describe('InMemoryJobRunner', () => {
     let aDone = false;
     let bDone = false;
 
-    await runner.enqueue({
-      key: 'a',
-      job: async () => {
-        await gateA.promise;
-        aDone = true;
-      },
+    const queue = runner.register<{ id: string; gate: Deferred<void> }>('q', async (payload) => {
+      await payload.gate.promise;
+      if (payload.id === 'a') aDone = true;
+      else bDone = true;
     });
-    await runner.enqueue({
-      key: 'b',
-      job: async () => {
-        await gateB.promise;
-        bDone = true;
-      },
-    });
+
+    await queue.enqueue({ key: 'a', payload: { id: 'a', gate: gateA } });
+    await queue.enqueue({ key: 'b', payload: { id: 'b', gate: gateB } });
 
     queueMicrotask(() => {
       gateA.resolve();
@@ -208,5 +175,27 @@ describe('InMemoryJobRunner', () => {
     await runner.drain();
     expect(aDone).toBe(true);
     expect(bDone).toBe(true);
+  });
+
+  it('register throws on duplicate queue name', () => {
+    const runner = new InMemoryJobRunner();
+    runner.register('q', async () => {});
+    expect(() => runner.register('q', async () => {})).toThrow(/already registered/);
+  });
+
+  it('routes different queues to their own handlers', async () => {
+    const runner = new InMemoryJobRunner();
+    const seen: string[] = [];
+    const qA = runner.register<{ v: string }>('a', async (p) => {
+      seen.push(`a:${p.v}`);
+    });
+    const qB = runner.register<{ v: string }>('b', async (p) => {
+      seen.push(`b:${p.v}`);
+    });
+    await qA.enqueue({ key: 'k', payload: { v: '1' } });
+    await qB.enqueue({ key: 'k', payload: { v: '2' } });
+    await runner.drain();
+    // FIFO on shared key — a's job before b's.
+    expect(seen).toEqual(['a:1', 'b:2']);
   });
 });

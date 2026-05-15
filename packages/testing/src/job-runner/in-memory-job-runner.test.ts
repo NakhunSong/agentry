@@ -29,21 +29,14 @@ describe('testing.InMemoryJobRunner', () => {
     const order: string[] = [];
     const gateA = deferred<void>();
 
-    await runner.enqueue({
-      key: 'k',
-      job: async () => {
-        order.push('a:start');
-        await gateA.promise;
-        order.push('a:end');
-      },
+    const queue = runner.register<{ id: string; gate?: Deferred<void> }>('q', async (payload) => {
+      order.push(`${payload.id}:start`);
+      if (payload.gate) await payload.gate.promise;
+      order.push(`${payload.id}:end`);
     });
-    await runner.enqueue({
-      key: 'k',
-      job: async () => {
-        order.push('b:start');
-        order.push('b:end');
-      },
-    });
+
+    await queue.enqueue({ key: 'k', payload: { id: 'a', gate: gateA } });
+    await queue.enqueue({ key: 'k', payload: { id: 'b' } });
 
     await settle();
     expect(order).toEqual(['a:start']);
@@ -58,19 +51,13 @@ describe('testing.InMemoryJobRunner', () => {
     const order: string[] = [];
     const gateA = deferred<void>();
 
-    await runner.enqueue({
-      key: 'a',
-      job: async () => {
-        order.push('a:start');
-        await gateA.promise;
-      },
+    const queue = runner.register<{ id: string; gate?: Deferred<void> }>('q', async (payload) => {
+      order.push(`${payload.id}:start`);
+      if (payload.gate) await payload.gate.promise;
     });
-    await runner.enqueue({
-      key: 'b',
-      job: async () => {
-        order.push('b:start');
-      },
-    });
+
+    await queue.enqueue({ key: 'a', payload: { id: 'a', gate: gateA } });
+    await queue.enqueue({ key: 'b', payload: { id: 'b' } });
 
     await settle();
     expect(order).toEqual(['a:start', 'b:start']);
@@ -83,18 +70,13 @@ describe('testing.InMemoryJobRunner', () => {
     const runner = new InMemoryJobRunner({ onError });
     const order: string[] = [];
 
-    await runner.enqueue({
-      key: 'k',
-      job: async () => {
-        throw new Error('boom');
-      },
+    const queue = runner.register<{ throws: boolean }>('q', async (payload) => {
+      if (payload.throws) throw new Error('boom');
+      order.push('after');
     });
-    await runner.enqueue({
-      key: 'k',
-      job: async () => {
-        order.push('after');
-      },
-    });
+
+    await queue.enqueue({ key: 'k', payload: { throws: true } });
+    await queue.enqueue({ key: 'k', payload: { throws: false } });
 
     await runner.drain();
     expect(order).toEqual(['after']);

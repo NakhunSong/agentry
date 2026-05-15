@@ -2,7 +2,7 @@
 
 All notable changes are recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves pre-1.0. Until then, every published change is breaking by default.
 
-## [Unreleased] — Phase 4
+## [Unreleased] — Phase 4 + early Phase 5
 
 ### Added
 - Extension guides for channel adapters, agent runners, embedding providers, and store adapters (`docs/extending/*`).
@@ -11,6 +11,7 @@ All notable changes are recorded here. Format follows [Keep a Changelog](https:/
 
 ### Changed
 - `docs/extending/configuration.md` answers the previously open question on adapter-specific secrets — centralized `SecretsSchema` in `runtime` is the chosen pattern; adapters take plain values via constructor.
+- **JobRunner port redesigned** for cross-process adapters (refs #28). Closure-as-job (`enqueue({ key, job })`) replaced with payload + handler-registry (`register(queue, handler)` returning a typed `JobQueue<P>` with `enqueue({ key, payload })`). `drain()` lifted from the in-memory adapter to the port itself. Same per-key FIFO semantics. Use-case factories now register their queue handler at construction (`HANDLE_INCOMING_QUEUE` exported from `@agentry/core`). The worker callback re-reads `Session` via `SessionStore.findByRef` instead of relying on a closure-captured snapshot — multi-process correctness, aligned with §4.9. Breaking change for any downstream `JobRunner` adapter; both in-memory copies in this repo are updated in lockstep.
 
 ## Phase 3 — MVP slice (2026-04 → 2026-05)
 

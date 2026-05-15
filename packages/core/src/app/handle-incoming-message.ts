@@ -32,10 +32,25 @@ export type HandleIncomingMessage = (event: IncomingEvent) => Promise<void>;
 
 const DEFAULT_TOP_K = 5;
 
+// Queue name used by `makeHandleIncomingMessage` to register its job handler
+// with the `JobRunner`. Exported so cross-process worker processes (pg-boss,
+// BullMQ, ...) can target the same queue when wiring an alternative composition.
+export const HANDLE_INCOMING_QUEUE = 'handle-incoming';
+
 // Header for the optional channel-context block prepended to the agent
 // prompt. Kept as an exported constant so seed/agent-workdir/CLAUDE.md can
 // refer to it by name and stay in sync if it changes.
 export const CHANNEL_CONTEXT_HEADER = '[Channel context]';
+
+// Job payload travelling through the `JobRunner` queue. Identifiers + the
+// live event only — the use-case handler re-reads `Session` via
+// `findByRef` at job-execution time so a multi-process adapter sees fresh
+// metadata (same convention as ARCHITECTURE.md §4.9).
+export interface HandleIncomingPayload {
+  readonly sessionId: SessionId;
+  readonly tenantId: TenantId;
+  readonly event: IncomingEvent;
+}
 
 interface ProcessOneTurnArgs {
   readonly event: IncomingEvent;
@@ -49,6 +64,75 @@ interface ProcessOneTurnArgs {
 
 export function makeHandleIncomingMessage(deps: HandleIncomingMessageDeps): HandleIncomingMessage {
   const topK = deps.retrievalTopK ?? DEFAULT_TOP_K;
+
+  const queue = deps.jobRunner.register<HandleIncomingPayload>(
+    HANDLE_INCOMING_QUEUE,
+    async (payload) => {
+      const { event, sessionId, tenantId } = payload;
+      const log = deps.logger.child({
+        channelKind: event.channelKind,
+        idempotencyKey: event.idempotencyKey,
+        tenantId,
+        sessionId,
+      });
+
+      const policy = deps.sessionPolicies.get(event.channelKind);
+      if (!policy) {
+        // Unreachable in practice — publisher validates before enqueue —
+        // but explicit so a cross-process worker that lost the policy
+        // registration fails loudly rather than silently.
+        log.error({ channelKind: event.channelKind }, 'no session policy for channel kind');
+        throw new Error(`No SessionPolicy registered for channel kind: ${event.channelKind}`);
+      }
+
+      const firstTouch = deps.sessionFirstTouches?.get(event.channelKind);
+
+      // Re-read session metadata so multi-process workers see other
+      // workers' first-touch updates (ARCHITECTURE.md §4.9). For the
+      // in-memory adapter this is a cheap Map read. Null here means the
+      // session vanished between publisher (findOrCreate) and worker —
+      // an invariant violation, not a recoverable state. The id check
+      // catches a re-created-under-same-ref scenario where findByRef
+      // returns a different session than the publisher saw.
+      const session = await deps.sessionStore.findByRef(
+        event.channelKind,
+        policy.computeNativeRef(event),
+        tenantId,
+      );
+      if (session === null) {
+        throw new Error(
+          `Session ${sessionId} not found at job execution time (channelKind=${event.channelKind})`,
+        );
+      }
+      if (session.id !== sessionId) {
+        throw new Error(
+          `Session id drifted: publisher saw ${sessionId}, worker re-read ${session.id}`,
+        );
+      }
+
+      if (firstTouch !== undefined) {
+        let synthetics: readonly IncomingEvent[] = [];
+        try {
+          synthetics = await firstTouch.onFirstTouch({ session, event });
+        } catch (err) {
+          // Backfill failure must not drop the live event.
+          log.warn({ err }, 'session first-touch failed; proceeding with live event only');
+        }
+        for (const synth of synthetics) {
+          await processOneTurn({
+            event: synth,
+            sessionId,
+            tenantId,
+            log,
+            deps,
+            topK,
+            policy,
+          });
+        }
+      }
+      await processOneTurn({ event, sessionId, tenantId, log, deps, topK, policy });
+    },
+  );
 
   return async function handleIncomingMessage(event: IncomingEvent): Promise<void> {
     const baseLog = deps.logger.child({
@@ -67,41 +151,11 @@ export function makeHandleIncomingMessage(deps: HandleIncomingMessageDeps): Hand
     const tenantLog = baseLog.child({ tenantId, channelNativeRef: nativeRef });
 
     const session = await deps.sessionStore.findOrCreate(event.channelKind, nativeRef, tenantId);
-    const log = tenantLog.child({ sessionId: session.id });
-    log.info({}, 'session resolved; enqueueing turn');
+    tenantLog.child({ sessionId: session.id }).info({}, 'session resolved; enqueueing turn');
 
-    const firstTouch = deps.sessionFirstTouches?.get(event.channelKind);
-
-    await deps.jobRunner.enqueue({
+    await queue.enqueue({
       key: session.id,
-      // First-touch + live processing run inside the per-key FIFO chain
-      // (see InMemoryJobRunner). Mention 2 cannot start until mention 1
-      // resolves, so a single-process deployment never double-fetches
-      // history. Multi-process correctness relies on the impl re-reading
-      // session metadata via SessionStore.findByRef.
-      job: async () => {
-        if (firstTouch !== undefined) {
-          let synthetics: readonly IncomingEvent[] = [];
-          try {
-            synthetics = await firstTouch.onFirstTouch({ session, event });
-          } catch (err) {
-            // Backfill failure must not drop the live event.
-            log.warn({ err }, 'session first-touch failed; proceeding with live event only');
-          }
-          for (const synth of synthetics) {
-            await processOneTurn({
-              event: synth,
-              sessionId: session.id,
-              tenantId,
-              log,
-              deps,
-              topK,
-              policy,
-            });
-          }
-        }
-        await processOneTurn({ event, sessionId: session.id, tenantId, log, deps, topK, policy });
-      },
+      payload: { sessionId: session.id, tenantId, event },
     });
   };
 }
