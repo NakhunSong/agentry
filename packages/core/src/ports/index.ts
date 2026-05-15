@@ -8,8 +8,10 @@ export type {
 export type { EmbeddingProvider } from './embedding-provider.js';
 export type { InboundChannel } from './inbound-channel.js';
 export type {
+  JobEnqueueOptions,
+  JobHandler,
+  JobQueue,
   JobRunner,
-  JobRunnerEnqueueOptions,
 } from './job-runner.js';
 export type { KnowledgeStore } from './knowledge-store.js';
 export type { Logger } from './logger.js';

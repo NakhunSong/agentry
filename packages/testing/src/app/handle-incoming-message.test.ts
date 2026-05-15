@@ -277,4 +277,40 @@ describe('makeHandleIncomingMessage', () => {
     expect((harness.errors[0]?.err as Error).message).toMatch(/OutboundChannel/);
     expect(harness.errors[0]?.key).toBe(session.id);
   });
+
+  // Cross-process invariant guards added by the JobRunner port redesign
+  // (#28). The publisher creates the session via findOrCreate; the worker
+  // re-reads it via findByRef. Two failure shapes the in-memory adapter
+  // never produces but pg-boss can:
+  //
+  //   (a) Session disappeared between publisher and worker → findByRef null.
+  //   (b) Session re-created under the same (kind, ref, tenant) with a new
+  //       id → findByRef returns a session whose id differs from the
+  //       publisher's `session.id`.
+  //
+  // Both are invariant violations: the handler throws and the JobRunner's
+  // onError surfaces them.
+  it('throws when findByRef returns null at worker time (session vanished)', async () => {
+    // Swap findByRef before handle(): publisher uses findOrCreate which is
+    // unaffected; the worker's re-read sees null and trips the guard.
+    harness.sessionStore.findByRef = async () => null;
+    await harness.handle(makeEvent());
+    await harness.jobRunner.drain();
+
+    expect(harness.errors).toHaveLength(1);
+    expect((harness.errors[0]?.err as Error).message).toMatch(/not found at job execution time/);
+  });
+
+  it('throws when findByRef returns a session with a drifted id', async () => {
+    const original = await harness.sessionStore.findOrCreate('test', 'thread-1', 'tenant-1');
+    harness.sessionStore.findByRef = async () => ({
+      ...original,
+      id: 'sess-drifted' as typeof original.id,
+    });
+    await harness.handle(makeEvent());
+    await harness.jobRunner.drain();
+
+    expect(harness.errors).toHaveLength(1);
+    expect((harness.errors[0]?.err as Error).message).toMatch(/Session id drifted/);
+  });
 });

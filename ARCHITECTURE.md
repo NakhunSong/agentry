@@ -423,19 +423,46 @@ context propagation.
 ### 4.8 JobRunner — issue #25
 
 ```ts
+interface JobHandler<P> {
+  (payload: P): Promise<void>;
+}
+
+interface JobQueue<P> {
+  enqueue(opts: { key: string; payload: P }): Promise<void>;
+}
+
 interface JobRunner {
   /**
-   * Enqueue a job. Same `key` → serialized FIFO. Different keys → parallel.
-   * Resolves after the job is enqueued (NOT after it completes).
+   * Register a queue handler at composition time. Returns a typed enqueue
+   * handle. Calling `register` twice for the same queue throws.
    */
-  enqueue(opts: { key: string; job: () => Promise<void> }): Promise<void>;
+  register<P>(queue: string, handler: JobHandler<P>): JobQueue<P>;
+
+  /**
+   * Graceful shutdown: wait until this process's in-flight jobs complete.
+   * Cross-process adapters drain per-process — other workers' jobs are
+   * not awaited.
+   */
+  drain(): Promise<void>;
 }
 ```
+
+**Why payload + handler-registry (not closure-as-job)**: the closure shape locked
+us into a single-process model — a function reference and its captured
+dependencies cannot travel through a queue medium. Promoting to "register the
+handler at boot, publish data only" makes the same port satisfiable by pg-boss,
+BullMQ, SQS, Kafka — all of which serialize the payload through their own
+medium and dispatch to a pre-registered handler on the worker side.
 
 **Why per-key**: back-to-back messages in the same Slack thread arrive faster than
 agent runs complete. Without per-key serialization, two parallel `recordTurn`s and
 two parallel agent invocations race on the same session — interleaved or duplicated
 state results. Per-key serial guarantees ordered processing within a session.
+
+**Payload contract**: payloads must be JSON-roundtrip-safe (plain objects,
+arrays, primitives, `null`; `Date` is allowed and adapters MUST handle it).
+The in-memory adapter passes payloads by reference and does NOT enforce this;
+the pg-boss adapter (#28) will.
 
 **MVP adapter**: in-memory `Map<key, Promise>` chain. Single process.
 
