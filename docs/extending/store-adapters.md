@@ -134,7 +134,7 @@ operational story.
 ## Migrations
 
 Pgvector ships its schema as numbered SQL files
-(`migrate/0001_init.sql`) plus a `runMigrations` runner that records
+(`migrations/0001_init.sql`, `0002_turn_idempotency.sql`, …) plus a `runMigrations` runner that records
 applied filenames in `_agentry_migrations`. The CLI (`apps/cli`)
 exposes this as `agentry migrate`. Reapplying a migration is a no-op.
 

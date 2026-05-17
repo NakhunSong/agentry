@@ -182,7 +182,7 @@ async function processOneTurn(args: ProcessOneTurnArgs): Promise<void> {
     authorRole: 'user',
     authorRef,
     contentText: event.payload.text,
-    metadata: { idempotencyKey: event.idempotencyKey },
+    idempotencyKey: event.idempotencyKey,
   });
 
   if (event.metadata?.[SYNTHETIC_EVENT_METADATA_KEY] === true) {

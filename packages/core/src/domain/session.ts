@@ -37,13 +37,21 @@ export interface TurnInput {
   readonly contentExtra?: Readonly<Record<string, unknown>>;
   // Token usage, tool-call summaries, etc.
   readonly metadata?: Readonly<Record<string, unknown>>;
+  // When set, `recordTurn` is idempotent per (sessionId, idempotencyKey):
+  // a second call with the same pair returns the previously-recorded Turn
+  // without inserting a new row. Null/undefined means "not idempotent" —
+  // every call produces a new turn.
+  readonly idempotencyKey?: string;
 }
 
-export interface Turn extends TurnInput {
+export interface Turn extends Omit<TurnInput, 'idempotencyKey'> {
   readonly id: TurnId;
   readonly seqNo: bigint;
   readonly sessionId: SessionId;
   readonly createdAt: Date;
+  // Normalized: missing key surfaces as `null`, never `undefined`, on every
+  // adapter — downstream `=== null` checks behave identically.
+  readonly idempotencyKey: string | null;
 }
 
 // Open kind. Common values: 'idle_timeout' (JobRunner-fired after

@@ -16,11 +16,20 @@ export class InMemorySessionStore implements SessionStore {
   private readonly sessions = new Map<SessionId, Session>();
   private readonly turns = new Map<SessionId, Turn[]>();
   private readonly nativeIndex = new Map<string, SessionId>();
+  // Mirrors the pgvector `(session_id, idempotency_key)` partial unique
+  // index — the in-memory adapter doesn't race (use case enters recordTurn
+  // serialized per-session via JobRunner), but the dedup is here so port
+  // semantics behave identically to the production adapter under tests.
+  private readonly idempotencyIndex = new Map<string, Turn>();
   private sessionSeq = 0;
   private turnSeq = 0;
 
   private indexKey(kind: ChannelKind, ref: ChannelNativeRef, tenant: TenantId): string {
     return `${kind}|${ref}|${tenant}`;
+  }
+
+  private idempotencyIndexKey(sessionId: SessionId, idempotencyKey: string): string {
+    return `${sessionId}|${idempotencyKey}`;
   }
 
   async findOrCreate(
@@ -69,20 +78,39 @@ export class InMemorySessionStore implements SessionStore {
   async recordTurn(sessionId: SessionId, turn: TurnInput): Promise<Turn> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
+    const idempotencyKey = turn.idempotencyKey ?? null;
+    if (idempotencyKey !== null) {
+      const existing = this.idempotencyIndex.get(
+        this.idempotencyIndexKey(sessionId, idempotencyKey),
+      );
+      if (existing) return existing;
+    }
     const list = this.turns.get(sessionId) ?? [];
     this.turnSeq += 1;
     const turnId: TurnId = `turn-${this.turnSeq}`;
     const seqNo = BigInt(list.length + 1);
+    // Build the Turn explicitly — TurnInput.idempotencyKey is optional/string
+    // while Turn.idempotencyKey is required/string|null. A spread + override
+    // would conflate the two; spelling out the fields keeps the type contract
+    // visible. If TurnInput grows a new optional field, add it here.
     const created: Turn = {
-      ...turn,
+      authorRole: turn.authorRole,
+      ...(turn.authorRef !== undefined ? { authorRef: turn.authorRef } : {}),
+      contentText: turn.contentText,
+      ...(turn.contentExtra !== undefined ? { contentExtra: turn.contentExtra } : {}),
+      ...(turn.metadata !== undefined ? { metadata: turn.metadata } : {}),
       id: turnId,
       seqNo,
       sessionId,
       createdAt: new Date(),
+      idempotencyKey,
     };
     list.push(created);
     this.turns.set(sessionId, list);
     this.sessions.set(sessionId, { ...session, lastActiveAt: new Date() });
+    if (idempotencyKey !== null) {
+      this.idempotencyIndex.set(this.idempotencyIndexKey(sessionId, idempotencyKey), created);
+    }
     return created;
   }
 

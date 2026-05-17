@@ -76,4 +76,46 @@ describe('InMemorySessionStore', () => {
       expect(found?.metadata.slackBackfilled).toBe(true);
     });
   });
+
+  // Mirrors the pgvector `(session_id, idempotency_key)` partial unique
+  // semantics. The in-memory adapter doesn't actually race (use case enters
+  // recordTurn serialized per-session via JobRunner) — this dedup is here
+  // so port semantics behave identically under tests.
+  describe('recordTurn idempotency', () => {
+    it('returns the same turn on repeated recordTurn with the same idempotencyKey', async () => {
+      const store = new InMemorySessionStore();
+      const session = await store.findOrCreate('test', 'thread-1', 'tenant-1');
+      const first = await store.recordTurn(session.id, {
+        authorRole: 'user',
+        contentText: 'hello',
+        idempotencyKey: 'event-1',
+      });
+      const second = await store.recordTurn(session.id, {
+        authorRole: 'user',
+        contentText: 'hello-WOULD-BE-OVERWRITTEN',
+        idempotencyKey: 'event-1',
+      });
+      expect(second.id).toBe(first.id);
+      expect(second.seqNo).toBe(first.seqNo);
+      expect(second.contentText).toBe('hello');
+      const recent = await store.getRecentTurns(session.id, 10);
+      expect(recent).toHaveLength(1);
+    });
+
+    it('normalizes missing idempotencyKey to null on the returned turn', async () => {
+      const store = new InMemorySessionStore();
+      const session = await store.findOrCreate('test', 'thread-1', 'tenant-1');
+      const t = await store.recordTurn(session.id, { authorRole: 'agent', contentText: 'reply' });
+      expect(t.idempotencyKey).toBeNull();
+    });
+
+    it('does not dedup turns with null idempotencyKey', async () => {
+      const store = new InMemorySessionStore();
+      const session = await store.findOrCreate('test', 'thread-1', 'tenant-1');
+      await store.recordTurn(session.id, { authorRole: 'agent', contentText: 'a' });
+      await store.recordTurn(session.id, { authorRole: 'agent', contentText: 'b' });
+      const recent = await store.getRecentTurns(session.id, 10);
+      expect(recent.map((r) => r.contentText)).toEqual(['a', 'b']);
+    });
+  });
 });

@@ -301,6 +301,30 @@ describe('makeHandleIncomingMessage', () => {
     expect((harness.errors[0]?.err as Error).message).toMatch(/not found at job execution time/);
   });
 
+  // Models pg-boss at-least-once redelivery: the same logical event lands
+  // twice on the worker (same idempotencyKey). User turn is deduped (once),
+  // but the agent run + reply re-execute every time — this is the desired
+  // retry semantic. Slack reply dedup is a separate concern, scoped out of
+  // the JobRunner port + idempotency PRs.
+  it('dedups user turn but re-runs agent + reply when the same idempotencyKey enqueues twice', async () => {
+    // Two separate handle() calls with the same idempotencyKey simulate the
+    // retry path. Each pg-boss redelivery would invoke the worker afresh,
+    // so we enqueue twice and let the JobRunner per-key FIFO serialize them.
+    await harness.handle(makeEvent({ idempotencyKey: 'shared' }));
+    await harness.handle(makeEvent({ idempotencyKey: 'shared' }));
+    await harness.jobRunner.drain();
+
+    const session = await harness.sessionStore.findOrCreate('test', 'thread-1', 'tenant-1');
+    const turns = await harness.sessionStore.getRecentTurns(session.id, 100);
+
+    const users = turns.filter((t) => t.authorRole === 'user');
+    const agents = turns.filter((t) => t.authorRole === 'agent');
+    expect(users).toHaveLength(1);
+    expect(users[0]?.idempotencyKey).toBe('shared');
+    expect(agents).toHaveLength(2);
+    expect(harness.outbound.replies).toHaveLength(2);
+  });
+
   it('throws when findByRef returns a session with a drifted id', async () => {
     const original = await harness.sessionStore.findOrCreate('test', 'thread-1', 'tenant-1');
     harness.sessionStore.findByRef = async () => ({

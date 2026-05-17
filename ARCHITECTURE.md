@@ -485,6 +485,21 @@ Switch from in-memory if **any one** of the following holds:
 If none apply (single VPS, single process, light traffic, Slack retry tolerance
 acceptable), in-memory remains the right choice. Implementation tracked in #28.
 
+**Turn idempotency under at-least-once delivery**: `SessionStore.recordTurn`
+accepts an optional `idempotencyKey`. When set, a second call with the same
+`(sessionId, idempotencyKey)` returns the originally-recorded `Turn` without
+inserting a new row. The use case threads `IncomingEvent.idempotencyKey` to
+the user turn only — agent turns are produced fresh on every retry and
+intentionally do NOT carry a key. Reply duplication on retry (Slack
+posting twice) is a separate concern owned by the channel adapter, not
+the JobRunner adapter.
+
+Schema enforcement: pgvector ships a partial unique
+`turns (session_id, idempotency_key) WHERE idempotency_key IS NOT NULL`
+and uses a single CTE `INSERT ... ON CONFLICT DO NOTHING` + fallback
+`SELECT` to keep dedup atomic in one round trip. `seq_no` may advance on
+conflict (BIGSERIAL); the contract is monotonic, not contiguous.
+
 ### 4.9 SessionFirstTouch — issue #63
 
 ```ts
