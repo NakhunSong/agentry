@@ -97,7 +97,8 @@ Expected output:
 
 ```
 applied 0001_init.sql
-migrate done — applied: 1, skipped: 0
+applied 0002_turn_idempotency.sql
+migrate done — applied: 2, skipped: 0
 ```
 
 Verify the schema:

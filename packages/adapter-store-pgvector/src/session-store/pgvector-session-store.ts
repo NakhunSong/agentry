@@ -36,6 +36,7 @@ interface TurnRow {
   content_extra: Record<string, unknown>;
   created_at: Date;
   metadata: Record<string, unknown>;
+  idempotency_key: string | null;
 }
 
 function mapSession(row: SessionRow): Session {
@@ -65,6 +66,7 @@ function mapTurn(row: TurnRow): Turn {
     contentExtra: row.content_extra,
     createdAt: row.created_at,
     metadata: row.metadata,
+    idempotencyKey: row.idempotency_key,
   };
 }
 
@@ -115,13 +117,33 @@ export class PgvectorSessionStore implements SessionStore {
   }
 
   async recordTurn(sessionId: SessionId, turn: TurnInput): Promise<Turn> {
+    const idempotencyKey = turn.idempotencyKey ?? null;
+    // Single-statement INSERT-or-fetch: the CTE attempts the insert and, on
+    // conflict against the partial unique `(session_id, idempotency_key)`,
+    // emits zero rows. The outer UNION ALL then returns the pre-existing
+    // row when (and only when) the insert did not produce one. Atomic in
+    // one round trip under read-committed (the default). seq_no advances
+    // even on conflict (BIGSERIAL) — acceptable; the contract is monotonic,
+    // not contiguous.
     const result = await this.pool.query<TurnRow>(
-      `INSERT INTO turns (
-         session_id, author_role, author_ref,
-         content_text, content_extra, metadata
+      `WITH ins AS (
+         INSERT INTO turns (
+           session_id, author_role, author_ref,
+           content_text, content_extra, metadata, idempotency_key
+         )
+         VALUES ($1, $2, $3::jsonb, $4, $5::jsonb, $6::jsonb, $7)
+         ON CONFLICT (session_id, idempotency_key)
+           WHERE idempotency_key IS NOT NULL
+           DO NOTHING
+         RETURNING *
        )
-       VALUES ($1, $2, $3::jsonb, $4, $5::jsonb, $6::jsonb)
-       RETURNING *`,
+       SELECT * FROM ins
+       UNION ALL
+       SELECT * FROM turns
+       WHERE session_id = $1
+         AND idempotency_key = $7
+         AND NOT EXISTS (SELECT 1 FROM ins)
+       LIMIT 1`,
       [
         sessionId,
         turn.authorRole,
@@ -129,6 +151,7 @@ export class PgvectorSessionStore implements SessionStore {
         turn.contentText,
         JSON.stringify(turn.contentExtra ?? {}),
         JSON.stringify(turn.metadata ?? {}),
+        idempotencyKey,
       ],
     );
     const row = result.rows[0];

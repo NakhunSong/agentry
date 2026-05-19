@@ -66,6 +66,50 @@ describe.skipIf(!integration)('PgvectorSessionStore', () => {
     // Default for omitted optional fields.
     expect(t1.authorRef).toBeUndefined();
     expect(t1.contentExtra).toEqual({});
+    // Idempotency key absent → normalized to `null` (not `undefined`).
+    expect(t1.idempotencyKey).toBeNull();
+    expect(t2.idempotencyKey).toBeNull();
+  });
+
+  it('recordTurn is idempotent on (session_id, idempotencyKey) — second call returns the same row', async () => {
+    const store = new PgvectorSessionStore(pool);
+    const session = await store.findOrCreate('slack', 'slack:C-idempotency:1.0', 'default');
+
+    const first = await store.recordTurn(session.id, {
+      authorRole: 'user',
+      contentText: 'hello',
+      idempotencyKey: 'event-abc',
+    });
+    // Second call: same key, different text — must NOT insert; must return
+    // the originally-stored turn unchanged.
+    const second = await store.recordTurn(session.id, {
+      authorRole: 'user',
+      contentText: 'hello-WOULD-BE-OVERWRITTEN',
+      idempotencyKey: 'event-abc',
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(second.seqNo).toBe(first.seqNo);
+    expect(second.contentText).toBe('hello');
+    expect(second.idempotencyKey).toBe('event-abc');
+
+    // Only one row physically present despite two recordTurn calls.
+    const rows = await pool.query<{ n: string }>(
+      "SELECT count(*) AS n FROM turns WHERE session_id = $1 AND idempotency_key = 'event-abc'",
+      [session.id],
+    );
+    expect(rows.rows[0]?.n).toBe('1');
+  });
+
+  it('null idempotencyKey is NOT deduped — every call inserts a fresh row', async () => {
+    const store = new PgvectorSessionStore(pool);
+    const session = await store.findOrCreate('slack', 'slack:C-null-idem:1.0', 'default');
+
+    const a = await store.recordTurn(session.id, { authorRole: 'agent', contentText: 'reply-1' });
+    const b = await store.recordTurn(session.id, { authorRole: 'agent', contentText: 'reply-2' });
+
+    expect(a.id).not.toBe(b.id);
+    expect(a.seqNo).toBeLessThan(b.seqNo);
   });
 
   it('getRecentTurns returns chronological order (oldest of the window first), bounded by limit', async () => {

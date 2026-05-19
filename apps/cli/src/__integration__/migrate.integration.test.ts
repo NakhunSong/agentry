@@ -42,7 +42,7 @@ describe.skipIf(!integration)('agentry migrate (CLI e2e)', () => {
     );
     expect(code).toBe(0);
     expect(err).toEqual([]);
-    expect(out.join('\n')).toMatch(/applied: 1, skipped: 0/);
+    expect(out.join('\n')).toMatch(/applied: 2, skipped: 0/);
 
     const client = new Client({ connectionString: databaseUrl });
     await client.connect();
@@ -69,6 +69,6 @@ describe.skipIf(!integration)('agentry migrate (CLI e2e)', () => {
       },
     );
     expect(code).toBe(0);
-    expect(out.join('\n')).toMatch(/applied: 0, skipped: 1/);
+    expect(out.join('\n')).toMatch(/applied: 0, skipped: 2/);
   });
 });

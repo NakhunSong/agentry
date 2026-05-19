@@ -32,7 +32,7 @@ describe.skipIf(!integration)('runMigrations against pgvector container', () => 
 
   it('applies all migrations on a fresh database', async () => {
     const result = await runMigrations({ databaseUrl, embeddingDim });
-    expect(result.applied).toEqual(['0001_init.sql']);
+    expect(result.applied).toEqual(['0001_init.sql', '0002_turn_idempotency.sql']);
     expect(result.skipped).toEqual([]);
 
     const client = new Client({ connectionString: databaseUrl });
@@ -77,9 +77,12 @@ describe.skipIf(!integration)('runMigrations against pgvector container', () => 
       expect(tenant.rowCount).toBe(1);
 
       const tracker = await client.query<{ version: string }>(
-        "SELECT version FROM _agentry_migrations WHERE adapter = 'pgvector'",
+        "SELECT version FROM _agentry_migrations WHERE adapter = 'pgvector' ORDER BY version",
       );
-      expect(tracker.rows.map((r) => r.version)).toEqual(['0001_init.sql']);
+      expect(tracker.rows.map((r) => r.version)).toEqual([
+        '0001_init.sql',
+        '0002_turn_idempotency.sql',
+      ]);
     } finally {
       await client.end();
     }
@@ -88,7 +91,7 @@ describe.skipIf(!integration)('runMigrations against pgvector container', () => 
   it('is idempotent on re-run', async () => {
     const result = await runMigrations({ databaseUrl, embeddingDim });
     expect(result.applied).toEqual([]);
-    expect(result.skipped).toEqual(['0001_init.sql']);
+    expect(result.skipped).toEqual(['0001_init.sql', '0002_turn_idempotency.sql']);
   });
 
   it('enforces canonical_uniq on (tenant_id, source_type, text_canonical_hash)', async () => {
