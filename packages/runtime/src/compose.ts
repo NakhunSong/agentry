@@ -1,5 +1,6 @@
 import { VoyageEmbeddingProvider } from '@agentry/adapter-embedding-voyage';
 import { InMemoryJobRunner } from '@agentry/adapter-jobrunner-memory';
+import { PgBossJobRunner } from '@agentry/adapter-jobrunner-pgboss';
 import { PinoLogger } from '@agentry/adapter-logger-pino';
 import { ClaudeCliAgentRunner, type SpawnFn } from '@agentry/adapter-runner-claude-cli';
 import { PgvectorKnowledgeStore, PgvectorSessionStore } from '@agentry/adapter-store-pgvector';
@@ -103,11 +104,20 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
     embeddings: embeddingProvider,
   });
 
-  const jobRunner = new InMemoryJobRunner({
-    onError: (err, key) => {
-      logger.error({ err, key }, 'job failed');
-    },
-  });
+  const jobRunner: JobRunner =
+    config.jobRunner === 'pg-boss'
+      ? new PgBossJobRunner({
+          connectionString: secrets.POSTGRES_URL,
+          logger,
+          onError: (err, key) => {
+            logger.error({ err, key }, 'job failed');
+          },
+        })
+      : new InMemoryJobRunner({
+          onError: (err, key) => {
+            logger.error({ err, key }, 'job failed');
+          },
+        });
 
   const built = args.buildChannels ? await args.buildChannels({ sessionStore, logger }) : undefined;
   const inboundChannels = built?.inboundChannels ?? args.inboundChannels ?? [];
@@ -134,6 +144,11 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
     logger,
   });
 
+  // start() after all register() calls — distributed adapters (pg-boss)
+  // open their schema and bind workers here. In-memory is a no-op but
+  // calling it symmetrically keeps the lifecycle explicit.
+  await jobRunner.start();
+
   return {
     logger,
     sessionStore,
@@ -144,8 +159,11 @@ export async function compose(args: ComposeArgs): Promise<RuntimeHandles> {
     handleIncoming,
     inboundChannels,
     shutdown: async () => {
-      // jobRunner.drain() must complete before pool.end() — running jobs may
-      // still need the pool to record turns or query knowledge.
+      // jobRunner.drain() must complete before pool.end() — the in-flight
+      // handlers (memory adapter) or the surviving worker jobs (pg-boss) call
+      // recordTurn / knowledgeStore.retrieve against THIS app's pool. (pg-boss
+      // also has its own internal pool which it tears down inside stop({close:
+      // true}) — that's separate from app pool.)
       await jobRunner.drain();
       await pool.end();
     },

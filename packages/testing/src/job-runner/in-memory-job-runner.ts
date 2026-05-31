@@ -16,10 +16,14 @@ interface QueueEntry {
 export class InMemoryJobRunner implements JobRunner {
   private readonly chains = new Map<string, Promise<void>>();
   private readonly queues = new Map<string, QueueEntry>();
+  private started = false;
 
   constructor(private readonly options: InMemoryJobRunnerOptions = {}) {}
 
   register<P>(queue: string, handler: JobHandler<P>): JobQueue<P> {
+    if (this.started) {
+      throw new Error(`JobRunner: cannot register queue '${queue}' after start()`);
+    }
     if (this.queues.has(queue)) {
       throw new Error(`JobRunner: queue '${queue}' is already registered`);
     }
@@ -27,6 +31,10 @@ export class InMemoryJobRunner implements JobRunner {
     return {
       enqueue: (opts: JobEnqueueOptions<P>) => this.enqueueInternal(queue, opts),
     };
+  }
+
+  async start(): Promise<void> {
+    this.started = true;
   }
 
   private async enqueueInternal<P>(queue: string, opts: JobEnqueueOptions<P>): Promise<void> {

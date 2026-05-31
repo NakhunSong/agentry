@@ -1,3 +1,4 @@
+import { InMemoryJobRunner } from '@agentry/adapter-jobrunner-memory';
 import type {
   ChannelKind,
   InboundChannel,
@@ -15,6 +16,7 @@ import type { Secrets } from './config/secrets.js';
 const config: AgentryConfig = {
   agentWorkdir: '/tmp/agent-workdir',
   logging: { level: 'info' },
+  jobRunner: 'memory',
 };
 
 const secrets: Secrets = {
@@ -62,6 +64,22 @@ describe('compose', () => {
     expect(handles.inboundChannels).toEqual([]);
 
     await handles.shutdown();
+  });
+
+  it('calls jobRunner.start() during compose so the queue is ready before handles are returned', async () => {
+    const { asPool } = makeStubPool();
+    const startSpy = vi.spyOn(InMemoryJobRunner.prototype, 'start');
+    try {
+      const handles = await compose({
+        config,
+        secrets,
+        poolFactory: () => asPool,
+      });
+      expect(startSpy).toHaveBeenCalledTimes(1);
+      await handles.shutdown();
+    } finally {
+      startSpy.mockRestore();
+    }
   });
 
   it('drains the JobRunner before ending the Pool', async () => {

@@ -31,10 +31,18 @@ export interface JobQueue<P> {
 }
 
 export interface JobRunner {
-  // Register a queue handler. Must be called at composition time, before any
-  // `enqueue` for that queue. Calling `register` twice for the same queue
-  // throws — duplicate registration indicates a boot-time misconfiguration.
+  // Register a queue handler. Must be called at composition time, BEFORE
+  // `start()`. Calling `register` twice for the same queue throws — duplicate
+  // registration indicates a boot-time misconfiguration. Calling `register`
+  // after `start()` also throws — distributed adapters wire workers at start
+  // time and cannot retroactively bind a handler.
   register<P>(queue: string, handler: JobHandler<P>): JobQueue<P>;
+
+  // Async one-shot initialization: distributed adapters (pg-boss, BullMQ, …)
+  // open their schema, start workers, and begin polling here. In-memory has
+  // no async setup and implements this as a no-op. Compose calls `start()`
+  // once after all `register()` calls, before the first `enqueue`.
+  start(): Promise<void>;
 
   // Graceful shutdown: wait until this process's in-flight jobs complete.
   // Cross-process adapters (pg-boss, BullMQ) do NOT wait for jobs running on
