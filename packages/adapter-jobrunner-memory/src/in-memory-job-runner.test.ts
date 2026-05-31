@@ -183,6 +183,19 @@ describe('InMemoryJobRunner', () => {
     expect(() => runner.register('q', async () => {})).toThrow(/already registered/);
   });
 
+  it('register throws when called after start()', async () => {
+    const runner = new InMemoryJobRunner();
+    await runner.start();
+    expect(() => runner.register('q', async () => {})).toThrow(/after start/);
+  });
+
+  it('start() is idempotent-safe (in-memory: no async setup)', async () => {
+    const runner = new InMemoryJobRunner();
+    await runner.start();
+    // Calling drain after start with no in-flight jobs returns immediately.
+    await runner.drain();
+  });
+
   it('routes different queues to their own handlers', async () => {
     const runner = new InMemoryJobRunner();
     const seen: string[] = [];

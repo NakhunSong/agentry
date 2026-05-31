@@ -18,6 +18,7 @@
   "dependencies": {
     "@agentry/adapter-embedding-voyage": "workspace:*",
     "@agentry/adapter-jobrunner-memory": "workspace:*",
+    "@agentry/adapter-jobrunner-pgboss": "workspace:*",
     "@agentry/adapter-logger-pino": "workspace:*",
     "@agentry/adapter-runner-claude-cli": "workspace:*",
     "@agentry/adapter-store-pgvector": "workspace:*",

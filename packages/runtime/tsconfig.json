@@ -11,6 +11,7 @@
     { "path": "../core" },
     { "path": "../adapter-embedding-voyage" },
     { "path": "../adapter-jobrunner-memory" },
+    { "path": "../adapter-jobrunner-pgboss" },
     { "path": "../adapter-logger-pino" },
     { "path": "../adapter-runner-claude-cli" },
     { "path": "../adapter-store-pgvector" }

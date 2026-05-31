@@ -113,8 +113,17 @@ import { defineConfig } from '@agentry/runtime';
 export default defineConfig({
   agentWorkdir: process.env.AGENT_WORKDIR ?? './seed/agent-workdir',
   logging: { level: 'info' },
+  jobRunner: 'memory', // or 'pg-boss' — see docs/extending/job-runner.md
 });
 ```
+
+Top-level fields:
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `agentWorkdir` | string (path) | — | Required. Procedural memory + skills the agent runner mounts. |
+| `logging.level` | log level | `'info'` | Pino level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`). |
+| `jobRunner` | `'memory'` \| `'pg-boss'` | `'memory'` | Cross-process queue — see `docs/extending/job-runner.md` for swap triggers and operational requirements. |
 
 `defineConfig` is an identity function with a runtime parse — no file system
 loading, no `tsx` magic. Importers compose the result into the runtime

@@ -434,9 +434,18 @@ interface JobQueue<P> {
 interface JobRunner {
   /**
    * Register a queue handler at composition time. Returns a typed enqueue
-   * handle. Calling `register` twice for the same queue throws.
+   * handle. Calling `register` twice for the same queue — or after
+   * `start()` — throws.
    */
   register<P>(queue: string, handler: JobHandler<P>): JobQueue<P>;
+
+  /**
+   * Async one-shot initialization. Distributed adapters (pg-boss, BullMQ, …)
+   * open their schema and bind workers here. In-memory has no async setup
+   * and implements this as a no-op. Compose calls `start()` once after all
+   * `register()` calls, before the first `enqueue`.
+   */
+  start(): Promise<void>;
 
   /**
    * Graceful shutdown: wait until this process's in-flight jobs complete.
@@ -483,7 +492,15 @@ Switch from in-memory if **any one** of the following holds:
 | 5 | Per-source rate limiting (GitHub API quotas, etc.) | Centralized throttling natural in queue, awkward in-memory |
 
 If none apply (single VPS, single process, light traffic, Slack retry tolerance
-acceptable), in-memory remains the right choice. Implementation tracked in #28.
+acceptable), in-memory remains the right choice.
+
+**Shipped adapters**: `@agentry/adapter-jobrunner-memory` (default) and
+`@agentry/adapter-jobrunner-pgboss` (selectable via `agentry.config.ts`
+`jobRunner: 'pg-boss'`). pg-boss uses `policy: 'singleton'` with the
+runtime `key` as `singletonKey` — same-key jobs serialize FIFO across
+retries (verified on pg-boss 12). Different keys run in parallel up to
+`localConcurrency` (default 10). See `docs/extending/job-runner.md` for
+the swap procedure, tuning, and the custom-adapter contract.
 
 **Turn idempotency under at-least-once delivery**: `SessionStore.recordTurn`
 accepts an optional `idempotencyKey`. When set, a second call with the same
